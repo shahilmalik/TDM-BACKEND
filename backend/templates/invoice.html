@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice #{{ invoice.number }}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+
+        /* Reset and Base Styles */
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; }
+        body {
+            font-family: 'Inter', sans-serif;
+            color: #1e293b; /* Slate 800 */
+            background-color: #f1f5f9; /* Slate 100 */
+            margin: 0;
+            padding: 20px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .invoice-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 48px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border-radius: 8px;
+        }
+
+        /* Branding Colors */
+        .text-brand { color: #6C5CE7; }
+        .text-accent { color: #FF6B6B; }
+        .bg-brand { background-color: #6C5CE7; color: white; }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 48px;
+            border-bottom: 2px solid #f1f5f9;
+            padding-bottom: 24px;
+        }
+        
+        .company-branding h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #0f172a;
+        }
+        .company-branding .tagline {
+            font-size: 12px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+        .company-address {
+            font-size: 13px;
+            color: #475569;
+        }
+        
+        .invoice-meta {
+            text-align: right;
+        }
+        .invoice-title {
+            font-size: 32px;
+            font-weight: 800;
+            color: #e2e8f0;
+            text-transform: uppercase;
+            margin: 0 0 8px 0;
+            line-height: 1;
+        }
+        .meta-group {
+            margin-top: 4px;
+            font-size: 14px;
+        }
+
+        /* Client & Details */
+        .details-grid {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 48px;
+            gap: 32px;
+        }
+        
+        .box-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: block;
+            letter-spacing: 0.5px;
+        }
+
+        .client-info, .payment-info {
+            flex: 1;
+        }
+
+        .client-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0 0 4px 0;
+        }
+        
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 32px;
+        }
+        
+        th {
+            background: #f8fafc;
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 700;
+            color: #64748b;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        
+        td {
+            padding: 16px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: top;
+            font-size: 13px;
+        }
+        
+        .item-row:last-child td {
+            border-bottom: none;
+        }
+
+        .description-cell {
+            color: #334155;
+        }
+        .description-main {
+            font-weight: 600;
+            font-size: 14px;
+            color: #0f172a;
+            margin-bottom: 4px;
+            display: block;
+        }
+        .description-sub {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .font-mono { font-family: 'Courier New', Courier, monospace; }
+
+        /* Summary */
+        .summary-container {
+            display: flex;
+            justify-content: flex-end;
+        }
+        
+        .summary-table {
+            width: 320px;
+            border-collapse: collapse;
+        }
+        .summary-table td {
+            padding: 8px 16px;
+            border: none;
+        }
+        .summary-label {
+            color: #64748b;
+        }
+        .summary-value {
+            font-weight: 600;
+            text-align: right;
+        }
+        .total-row {
+            background-color: #f8fafc;
+            border-top: 2px solid #0f172a !important;
+        }
+        .total-row td {
+            padding-top: 16px;
+            padding-bottom: 16px;
+            color: #0f172a;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 64px;
+            padding-top: 32px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            gap: 32px;
+        }
+        
+        .bank-details {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 12px;
+            min-width: 280px;
+        }
+        .bank-title {
+            font-weight: 700;
+            color: #6C5CE7;
+            margin-bottom: 8px;
+            display: block;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+        .bank-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        .bank-label { color: #64748b; }
+        .bank-val { font-weight: 600; color: #334155; }
+        
+        .terms {
+            flex: 1;
+            text-align: right;
+            font-size: 11px;
+            color: #94a3b8;
+            max-width: 300px;
+        }
+
+        /* Print Specifics */
+        @media print {
+            body { 
+                background: white; 
+                padding: 0; 
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .invoice-container { 
+                box-shadow: none; 
+                padding: 0; 
+                max-width: 100%; 
+                border: none;
+            }
+            @page { margin: 2cm; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="invoice-container">
+    <header>
+        <div class="company-branding">
+            <h1>Tarviz<span class="text-brand">Digimart</span></h1>
+            <div class="tagline">The Upgrade You Seek</div>
+            
+            <div class="company-address">
+                {{ company.address_line1 }}<br>
+                {{ company.address_line2 }}<br>
+                Phone: {{ company.phone }}<br>
+                Email: {{ company.email }}
+            </div>
+        </div>
+        
+        <div class="invoice-meta">
+            <div class="invoice-title">Invoice</div>
+            <div class="meta-group"><strong>#{{ invoice.number }}</strong></div>
+            <div class="meta-group">Date: {{ invoice.date }}</div>
+            <div class="meta-group">Due: {{ invoice.due_date }}</div>
+        </div>
+    </header>
+
+    <div class="details-grid">
+        <div class="client-info">
+            <span class="box-title">Bill To</span>
+            <div class="client-name">{{ client.business_name }}</div>
+            <div style="color: #475569; max-width: 250px;">
+                {{ client.address }}<br>
+                Phone: {{ client.phone }}
+            </div>
+            {% if client.gstin %}
+            <div style="margin-top: 8px; font-size: 12px; font-weight: 600;">GSTIN: {{ client.gstin }}</div>
+            {% endif %}
+        </div>
+
+        <div class="payment-info text-right">
+             <div style="margin-bottom: 24px;">
+                <span class="box-title">Payment Mode</span>
+                <span style="font-weight: 600; color: #0f172a;">{{ invoice.payment_mode }}</span>
+             </div>
+             <div>
+                <span class="box-title">Payment Terms</span>
+                <span style="font-size: 13px; color: #475569;">{{ invoice.payment_terms }}</span>
+             </div>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th width="5%">#</th>
+                <th width="15%">Service ID</th>
+                <th width="10%">HSN</th>
+                <th width="50%">Description</th>
+                <th width="20%" class="text-right">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in invoice.items %}
+            <tr class="item-row">
+                <td style="color: #94a3b8;">{{ forloop.counter }}</td>
+                <td class="font-mono">{{ item.service_id }}</td>
+                <td>{{ item.hsn }}</td>
+                <td class="description-cell">
+                    <!-- Format: (Number) x Service Name with Description -->
+                    <span class="description-main">
+                        <span class="text-brand">{{ item.quantity }} x</span> {{ item.name }}
+                    </span>
+                    <span class="description-sub">{{ item.description }}</span>
+                </td>
+                <td class="text-right font-medium">{{ item.total }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="summary-container">
+        <table class="summary-table">
+            <tr>
+                <td class="summary-label">Total Amount</td>
+                <td class="summary-value">{{ invoice.total_amount }}</td>
+            </tr>
+            <tr>
+                <td class="summary-label">Amount Paid</td>
+                <td class="summary-value" style="color: #10b981;">{{ invoice.paid_amount }}</td>
+            </tr>
+            <tr class="total-row">
+                <td>Balance Due</td>
+                <td class="text-right text-brand">{{ invoice.pending_amount }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <footer>
+        <div class="bank-details">
+            <span class="bank-title">Bank Details</span>
+            <div class="bank-row"><span class="bank-label">Account Name:</span> <span class="bank-val">{{ bank.account_name }}</span></div>
+            <div class="bank-row"><span class="bank-label">Bank Name:</span> <span class="bank-val">{{ bank.bank_name }}</span></div>
+            <div class="bank-row"><span class="bank-label">Account No:</span> <span class="bank-val">{{ bank.account_number }}</span></div>
+            <div class="bank-row"><span class="bank-label">IFSC Code:</span> <span class="bank-val">{{ bank.ifsc }}</span></div>
+        </div>
+
+        <div class="terms">
+            <p style="margin-bottom: 8px;"><strong>Thank you for your business!</strong></p>
+            <p>Please include the invoice number in your payment reference. </p>
+        </div>
+    </footer>
+</div>
+
+</body>
+</html>

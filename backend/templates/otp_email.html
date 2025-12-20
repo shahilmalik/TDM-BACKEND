@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#0F172A;color:#E5E7EB;font-family:Arial;">
+  <div style="max-width:600px;margin:auto;padding:30px;">
+    <h2 style="color:#F87171;">Tarviz Digimart</h2>
+
+    <p>Hello{% if user %} {{ user }}{% endif %},</p>
+    <p>Your One-Time Password (OTP) is:</p>
+
+    <div style="
+        background:#1E293B;
+        padding:15px;
+        font-size:28px;
+        text-align:center;
+        letter-spacing:6px;
+        color:#F87171;
+        border-radius:8px;">
+        {{ otp }}
+    </div>
+
+    <p style="margin-top:20px;">
+      This OTP is valid for <strong>5 minutes</strong>.
+    </p>
+
+    <p>If you didn’t request this, please ignore this email.</p>
+
+    <hr style="border-color:#334155;">
+    <small>© Tarviz Digimart</small>
+  </div>
+</body>
+</html>
