@@ -16,9 +16,10 @@ from core.permissions import IsOwnerOrAdmin
 from rest_framework import mixins
 from rest_framework import routers
 from rest_framework.viewsets import GenericViewSet
+from kanban.models import ContentItem
 
 class InvoiceViewSet(viewsets.ModelViewSet):
-    queryset = Invoice.objects.all().select_related('client', 'authorized_by')
+    queryset = Invoice.objects.all().select_related('client', 'authorized_by').prefetch_related('items__service')
     serializer_class = InvoiceSerializer
     # permission_classes = [IsAuthenticated]
 
@@ -74,6 +75,79 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             'id': invoice.id,
             'html': html,
         })
+
+    @action(detail=True, methods=['post'])
+    def start_pipeline(self, request, pk=None):
+        """Create kanban ContentItems for pipeline services on this (paid) invoice.
+
+        Idempotent: re-calling will only create missing items.
+        """
+        invoice = self.get_object()
+
+        if invoice.status != 'paid':
+            return Response(
+                {"success": False, "error": "Pipeline can only be started for paid invoices."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        items = invoice.items.select_related('service').all()
+        pipeline_items = [it for it in items if getattr(it.service, 'is_pipeline', False)]
+        if not pipeline_items:
+            return Response(
+                {"success": False, "error": "No pipeline services found on this invoice."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created = 0
+        created_titles = []
+        for it in pipeline_items:
+            svc = it.service
+            config = getattr(svc, 'pipeline_config', None) or []
+            if not isinstance(config, list):
+                continue
+
+            for entry in config:
+                if not isinstance(entry, dict):
+                    continue
+                prefix = (entry.get('prefix') or '').strip()
+                try:
+                    count = int(entry.get('count') or 0)
+                except Exception:
+                    count = 0
+                if not prefix or count <= 0:
+                    continue
+
+                titles = [f"{prefix}-{i:03d}" for i in range(1, count + 1)]
+                existing = set(
+                    ContentItem.objects.filter(
+                        invoice=invoice,
+                        service=svc,
+                        title__in=titles,
+                    ).values_list('title', flat=True)
+                )
+
+                for title in titles:
+                    if title in existing:
+                        continue
+                    ContentItem.objects.create(
+                        title=title,
+                        client=invoice.client,
+                        service=svc,
+                        invoice=invoice,
+                        created_by=request.user,
+                        due_date=invoice.start_date or None,
+                    )
+                    created += 1
+                    created_titles.append(title)
+
+        return Response(
+            {
+                "success": True,
+                "created": created,
+                "titles": created_titles,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class PaymentModeViewSet(viewsets.ModelViewSet):
@@ -139,4 +213,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all().select_related('invoice', 'payment_mode', 'received_by')
     serializer_class = PaymentSerializer
     # permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(received_by=self.request.user)
     

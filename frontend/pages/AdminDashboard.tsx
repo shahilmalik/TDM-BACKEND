@@ -51,6 +51,7 @@ import {
   Facebook as FbIcon,
   // Fix: Added missing Loader2 import from lucide-react
   Loader2,
+  Play,
 } from "lucide-react";
 import {
   AdminServiceItem,
@@ -271,6 +272,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     null
   );
   const [paymentAmountInput, setPaymentAmountInput] = useState<number>(0);
+  const [paymentModeIdInput, setPaymentModeIdInput] = useState<string>("");
+  const [paymentReferenceInput, setPaymentReferenceInput] =
+    useState<string>("");
 
   // Client Details Modal
   const [selectedClientDetail, setSelectedClientDetail] =
@@ -542,6 +546,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           id: inv.id,
           invoiceNumber: inv.invoice_id,
           date: inv.date,
+          startDate: inv.start_date ?? null,
           dueDate: inv.due_date || inv.date,
           clientId: inv.client?.id || "",
           clientName: inv.client
@@ -559,11 +564,62 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             ? inv.status.charAt(0).toUpperCase() + inv.status.slice(1)
             : "Unknown",
           authorizedBy: inv.authorized_by || "System",
+          hasPipeline: !!inv.has_pipeline,
         };
       });
       setInvoices(mapped);
     } catch (e) {
       console.error("Failed to fetch invoices", e);
+    }
+  };
+
+  const openRecordPaymentModal = (inv: AdminInvoice) => {
+    setSelectedInvoice(inv);
+    const pending = Math.max((inv.grandTotal || 0) - (inv.paidAmount || 0), 0);
+    setPaymentAmountInput(pending);
+    setPaymentModeIdInput("");
+    setPaymentReferenceInput("");
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleRecordPayment = async () => {
+    if (!selectedInvoice) return;
+    const invoiceId = Number(selectedInvoice.id);
+    if (!invoiceId || Number.isNaN(invoiceId)) {
+      setAdminMessage({ type: "error", text: "Invalid invoice." });
+      return;
+    }
+    if (!paymentAmountInput || paymentAmountInput <= 0) {
+      setAdminMessage({ type: "error", text: "Enter a valid amount." });
+      return;
+    }
+
+    try {
+      await api.invoice.recordPayment({
+        invoice: invoiceId,
+        amount: Number(paymentAmountInput),
+        payment_mode: paymentModeIdInput ? Number(paymentModeIdInput) : null,
+        reference: paymentReferenceInput || undefined,
+      });
+      setIsPaymentModalOpen(false);
+      setSelectedInvoice(null);
+      fetchInvoices();
+      setAdminMessage({ type: "success", text: "Payment recorded." });
+    } catch (e: any) {
+      setAdminMessage({ type: "error", text: e?.message || "Failed." });
+    }
+  };
+
+  const handleStartPipeline = async (inv: AdminInvoice) => {
+    try {
+      await api.invoice.startPipeline(Number(inv.id));
+      setAdminMessage({ type: "success", text: "Pipeline started." });
+      fetchPipeline();
+    } catch (e: any) {
+      setAdminMessage({
+        type: "error",
+        text: e?.message || "Failed to start pipeline.",
+      });
     }
   };
 
@@ -1840,6 +1896,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <span className="inline-flex items-center gap-1">
                                 <Calendar size={14} /> {inv.date}
                               </span>
+                              <span className="inline-flex items-center gap-1">
+                                <Calendar size={14} /> Start:{" "}
+                                {inv.startDate || "—"}
+                              </span>
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${getStatusColor(
                                   inv.status
@@ -1854,6 +1914,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          {inv.status !== "Paid" &&
+                            inv.status !== "Cancelled" && (
+                              <button
+                                onClick={() => openRecordPaymentModal(inv)}
+                                className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
+                              >
+                                <PaymentIcon size={16} /> Record Payment
+                              </button>
+                            )}
+
+                          {inv.status === "Paid" && inv.hasPipeline && (
+                            <button
+                              onClick={() => handleStartPipeline(inv)}
+                              title="Start pipeline"
+                              className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
+                            >
+                              <Play size={16} /> Start
+                            </button>
+                          )}
                           <button
                             onClick={() => handlePreviewInvoice(Number(inv.id))}
                             className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
@@ -3289,6 +3368,93 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RECORD PAYMENT MODAL */}
+      {isPaymentModalOpen && selectedInvoice && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <PaymentIcon size={20} className="text-[#6C5CE7]" /> Record
+                Payment
+              </h3>
+              <button
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-sm text-slate-600 font-medium">
+                {selectedInvoice.invoiceNumber} — {selectedInvoice.clientName}
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    Amount
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={paymentAmountInput}
+                    onChange={(e) =>
+                      setPaymentAmountInput(Number(e.target.value))
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    Payment Mode (optional)
+                  </label>
+                  <select
+                    value={paymentModeIdInput}
+                    onChange={(e) => setPaymentModeIdInput(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  >
+                    <option value="">-- Select --</option>
+                    {invoiceDropdowns.paymentModes.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    Reference (optional)
+                  </label>
+                  <input
+                    value={paymentReferenceInput}
+                    onChange={(e) => setPaymentReferenceInput(e.target.value)}
+                    placeholder="e.g. UPI txn id"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
+              <button
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRecordPayment}
+                className="bg-[#0F172A] text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800"
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>

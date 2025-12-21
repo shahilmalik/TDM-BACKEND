@@ -325,6 +325,22 @@ export const api = {
     downloadPdf: (id: number | string) =>
       request<Blob>(`/invoice/invoices/${id}/generate_pdf/`, { method: "GET" }),
 
+    startPipeline: (id: number | string) =>
+      request<any>(`/invoice/invoices/${id}/start_pipeline/`, {
+        method: "POST",
+      }),
+
+    recordPayment: (data: {
+      invoice: number | string;
+      amount: number;
+      payment_mode?: number | null;
+      reference?: string;
+    }) =>
+      request<any>("/invoice/payments/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+
     // Dropdowns
     getDropdownClients: () =>
       request<any[]>("/invoice/dropdowns/clients/", { method: "GET" }),

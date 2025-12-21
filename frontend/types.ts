@@ -175,6 +175,7 @@ export interface AdminInvoice {
   id: string;
   invoiceNumber: string;
   date: string;
+  startDate?: string | null;
   dueDate: string;
   clientId: string;
   clientName: string;
@@ -185,10 +186,17 @@ export interface AdminInvoice {
   taxTotal: number;
   grandTotal: number;
   paidAmount: number;
-  status: "Paid" | "Partially Paid" | "Unpaid" | "Overdue";
+  status:
+    | "Paid"
+    | "Partially Paid"
+    | "Unpaid"
+    | "Overdue"
+    | "Cancelled"
+    | "Unknown";
   authorizedBy: string;
   paymentMode?: string;
   paymentTerms?: string;
+  hasPipeline?: boolean;
 }
 
 export interface AdminClient {
