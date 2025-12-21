@@ -238,6 +238,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   >("pipeline");
   const [currentUser, setCurrentUser] = useState<any>(null);
 
+  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
+  const [createTaskTitle, setCreateTaskTitle] = useState("");
+  const [createTaskServiceId, setCreateTaskServiceId] = useState<string>("");
+  const [createTaskInvoiceId, setCreateTaskInvoiceId] = useState<string>("");
+  const [createTaskServices, setCreateTaskServices] = useState<
+    Array<{ id: string; label: string }>
+  >([]);
+  const [createTaskInvoices, setCreateTaskInvoices] = useState<
+    Array<{ id: string; label: string }>
+  >([]);
+  const [createTaskLoading, setCreateTaskLoading] = useState(false);
+  const [createTaskError, setCreateTaskError] = useState<string | null>(null);
+
   const [adminMessage, setAdminMessage] = useState<{
     type: "error" | "success";
     text: string;
@@ -248,6 +261,77 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const t = window.setTimeout(() => setAdminMessage(null), 5000);
     return () => window.clearTimeout(t);
   }, [adminMessage]);
+
+  const isManagerOrAbove =
+    (currentUser?.type ?? currentUser?.role ?? "").toString() === "manager" ||
+    (currentUser?.type ?? currentUser?.role ?? "").toString() === "superadmin";
+
+  const openCreateTaskModal = async () => {
+    if (!selectedPipelineClient) return;
+    if (selectedPipelineClient === MOCK_PIPELINE_CLIENT_ID) return;
+    setCreateTaskTitle("");
+    setCreateTaskServiceId("");
+    setCreateTaskInvoiceId("");
+    setCreateTaskError(null);
+    setIsCreateTaskModalOpen(true);
+    setCreateTaskLoading(true);
+    try {
+      const [invoiceRes, servicesRes]: any = await Promise.all([
+        api.invoice.getDropdownPaidInvoices(selectedPipelineClient),
+        api.services.list({ page: 1, page_size: 1000, is_active: "active" }),
+      ]);
+
+      const invoiceArr = Array.isArray(invoiceRes?.invoices)
+        ? invoiceRes.invoices
+        : [];
+      setCreateTaskInvoices(
+        invoiceArr.map((inv: any) => ({
+          id: String(inv.id),
+          label: inv.invoice_id
+            ? `${String(inv.invoice_id)} (${String(inv.date)})`
+            : `Invoice #${inv.id}`,
+        }))
+      );
+
+      const servicesData = Array.isArray(servicesRes)
+        ? servicesRes
+        : servicesRes?.results || [];
+      setCreateTaskServices(
+        (servicesData || []).map((s: any) => ({
+          id: String(s.id),
+          label: String(s.name ?? `Service #${s.id}`),
+        }))
+      );
+    } catch (e: any) {
+      setCreateTaskError(e?.message || "Failed to load invoices.");
+      setCreateTaskServices([]);
+      setCreateTaskInvoices([]);
+    } finally {
+      setCreateTaskLoading(false);
+    }
+  };
+
+  const submitCreateTask = async () => {
+    if (!selectedPipelineClient) return;
+    if (!createTaskTitle.trim() || !createTaskInvoiceId || !createTaskServiceId)
+      return;
+    setCreateTaskLoading(true);
+    setCreateTaskError(null);
+    try {
+      await api.kanban.create({
+        title: createTaskTitle.trim(),
+        client_id: Number(selectedPipelineClient),
+        invoice_id: Number(createTaskInvoiceId),
+        service_id: Number(createTaskServiceId),
+      });
+      setIsCreateTaskModalOpen(false);
+      await fetchPipeline();
+    } catch (e: any) {
+      setCreateTaskError(e?.message || "Failed to create task.");
+    } finally {
+      setCreateTaskLoading(false);
+    }
+  };
 
   // --- DATA INITIALIZATION ---
 
@@ -497,6 +581,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const currentUserType = String(
     (currentUser?.type ?? currentUser?.role ?? "").toString()
   ).toLowerCase();
+
+  const currentUserDisplayName = (() => {
+    const first = (currentUser?.first_name ?? currentUser?.firstName ?? "").toString();
+    const last = (currentUser?.last_name ?? currentUser?.lastName ?? "").toString();
+    const full = `${first} ${last}`.trim();
+    return (
+      full ||
+      (currentUser?.name ?? "").toString().trim() ||
+      (currentUser?.email ?? "").toString().trim() ||
+      ""
+    );
+  })();
+
+  const currentUserRoleLabel = (() => {
+    const raw = (currentUser?.type ?? currentUser?.role ?? "").toString();
+    if (!raw) return "";
+    return raw.replace(/_/g, " ");
+  })();
   const isPipelineOnlyUser = ["designer", "content_writer"].includes(
     currentUserType
   );
@@ -865,6 +967,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const data = Array.isArray(res) ? res : res?.results || [];
       const mapped = data.map((c: any) => {
         const u = c.user_detail || {};
+        const userId = u.id ?? c.user_id ?? c.user;
         const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
           u.last_name || ""
         }`.trim();
@@ -875,7 +978,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         );
 
         return {
-          id: c.id,
+          // IMPORTANT: pipeline selection must use CustomUser id (Invoice.client_id / ContentItem.client_id)
+          id: userId ?? c.id,
           businessName: c.company_name,
           contactName,
           email: u.email || c.business_email,
@@ -1050,10 +1154,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           id: item.id,
           title: item.title,
           platform: item.platforms?.[0] || "instagram",
+          platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
+          priority: item.priority || undefined,
           status: mapBackendColumnToStatus(item.column),
           dueDate: item.due_date || "",
-          description: item.description || "",
+          creative_copy: item.creative_copy || "",
+          post_caption: item.post_caption || "",
+          // backward-compat for older UI usages
+          description: item.creative_copy ?? item.description ?? "",
+          caption: item.post_caption ?? item.caption ?? "",
           thumbnail: item.thumbnail,
+          media_assets: Array.isArray(item.media_assets)
+            ? item.media_assets
+            : undefined,
+          client: item.client
+            ? {
+                first_name: item.client.first_name,
+                last_name: item.client.last_name,
+              }
+            : undefined,
+          assigned_to: item.assigned_to
+            ? {
+                first_name: item.assigned_to.first_name,
+                last_name: item.assigned_to.last_name,
+                ...(item.assigned_to.id ? { id: item.assigned_to.id } : {}),
+              }
+            : null,
         };
 
         grouped[key] = [...(grouped[key] || []), post];
@@ -1065,6 +1191,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     } catch (e) {
       console.error("Failed to fetch pipeline", e);
+    }
+  };
+
+  const handleScheduleById = async (
+    postId: string | number,
+    scheduledAtIso: string
+  ) => {
+    if (!selectedPipelineClient) return;
+    if (selectedPipelineClient === MOCK_PIPELINE_CLIENT_ID) return;
+
+    setPipelineData((prev) => {
+      const next = { ...prev };
+      const list = next[selectedPipelineClient] || [];
+      next[selectedPipelineClient] = list.map((p) =>
+        p.id === postId ? { ...p, status: "scheduled" } : p
+      );
+      return next;
+    });
+
+    try {
+      await api.kanban.schedule(postId as number, scheduledAtIso);
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -2080,6 +2229,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             Tarviz<span className="text-[#FF6B6B]">Admin</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">Internal Dashboard</p>
+          {currentUserDisplayName && (
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+              <div className="text-sm font-bold text-white leading-tight">
+                {currentUserDisplayName}
+              </div>
+              {currentUserRoleLabel && (
+                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">
+                  {currentUserRoleLabel}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <nav className="flex-1 px-4 space-y-2 pb-4">
           <button
@@ -2228,9 +2389,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <h3 className="font-bold text-sm text-slate-700">
                             {column.label}
                           </h3>
-                          <span className="bg-slate-100 px-2 py-0.5 rounded-full text-xs font-bold text-slate-500">
-                            {posts.length}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            {column.id === "backlog" && isManagerOrAbove && (
+                              <button
+                                type="button"
+                                onClick={openCreateTaskModal}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
+                                title="Add task"
+                              >
+                                <Plus size={16} />
+                              </button>
+                            )}
+                            <span className="bg-slate-100 px-2 py-0.5 rounded-full text-xs font-bold text-slate-500">
+                              {posts.length}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
                           {posts.map((post) => (
@@ -2239,6 +2412,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               post={post}
                               isAdmin={true}
                               onDragStart={handlePipelineDragStart}
+                              onSchedule={handleScheduleById}
+                              onRefresh={fetchPipeline}
                             />
                           ))}
                         </div>
@@ -2253,6 +2428,121 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <p className="text-lg font-medium">
                   Select a client to view their content pipeline
                 </p>
+              </div>
+            )}
+
+            {isCreateTaskModalOpen && (
+              <div
+                className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60"
+                onClick={() => setIsCreateTaskModalOpen(false)}
+              >
+                <div
+                  className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-100 p-6"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-lg font-extrabold text-slate-900">
+                        Add Task
+                      </h3>
+                      <p className="text-sm text-slate-500">
+                        Tasks must be linked to an invoice and start in Backlog.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
+                      onClick={() => setIsCreateTaskModalOpen(false)}
+                      title="Close"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  {createTaskError && (
+                    <div className="mb-3 p-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-sm">
+                      {createTaskError}
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+                        Title
+                      </label>
+                      <input
+                        value={createTaskTitle}
+                        onChange={(e) => setCreateTaskTitle(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#6C5CE7]"
+                        placeholder="Enter title..."
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+                        Service
+                      </label>
+                      <select
+                        value={createTaskServiceId}
+                        onChange={(e) => setCreateTaskServiceId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#6C5CE7]"
+                        disabled={createTaskLoading}
+                      >
+                        <option value="">
+                          {createTaskLoading
+                            ? "Loading services..."
+                            : "Select a service"}
+                        </option>
+                        {createTaskServices.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+                        Invoice
+                      </label>
+                      <select
+                        value={createTaskInvoiceId}
+                        onChange={(e) => setCreateTaskInvoiceId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#6C5CE7]"
+                        disabled={createTaskLoading}
+                      >
+                        <option value="">
+                          {createTaskLoading
+                            ? "Loading invoices..."
+                            : "Select an invoice"}
+                        </option>
+                        {createTaskInvoices.map((inv) => (
+                          <option key={inv.id} value={inv.id}>
+                            {inv.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateTaskModalOpen(false)}
+                      className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!createTaskTitle.trim() || !createTaskServiceId || !createTaskInvoiceId || createTaskLoading}
+                      onClick={submitCreateTask}
+                      className="flex-1 py-3 bg-[#6C5CE7] text-white rounded-xl font-bold disabled:opacity-50 hover:bg-violet-700 transition-all"
+                    >
+                      Create
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

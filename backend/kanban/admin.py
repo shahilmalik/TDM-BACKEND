@@ -12,7 +12,6 @@ class ContentItemAdmin(admin.ModelAdmin):
         "client",
         "service",
         "created_by",
-        "package",
         "approval_status",
         "due_date",
         "created_at"
@@ -23,14 +22,14 @@ class ContentItemAdmin(admin.ModelAdmin):
         "client__email",
         "created_by__email"
     )
-    list_filter = ("column", "approval_status", "package", "created_at")
+    list_filter = ("column", "approval_status", "created_at")
     readonly_fields = ("created_at", "updated_at")
     fieldsets = (
         ("Content Details", {
-            "fields": ("title", "description", "due_date", "platforms")
+            "fields": ("title", "creative_copy", "post_caption", "due_date", "platforms")
         }),
         ("Kanban Status", {
-            "fields": ("column", "approval_status", "package")
+            "fields": ("column", "approval_status")
         }),
         ("Relations", {
             "fields": ("client", "service", "created_by")

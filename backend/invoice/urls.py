@@ -10,6 +10,7 @@ from .views import (
     InvoiceStatusesDropdownView,
     PaymentModesDropdownView,
     PaymentTermsDropdownView,
+    PaidInvoicesDropdownView,
 )
 
 router = DefaultRouter()
@@ -25,4 +26,5 @@ urlpatterns = [
     path('dropdowns/invoice-statuses/', InvoiceStatusesDropdownView.as_view(), name='dropdown-invoice-statuses'),
     path('dropdowns/payment-modes/', PaymentModesDropdownView.as_view(), name='dropdown-payment-modes'),
     path('dropdowns/payment-terms/', PaymentTermsDropdownView.as_view(), name='dropdown-payment-terms'),
+    path('dropdowns/paid-invoices/', PaidInvoicesDropdownView.as_view(), name='dropdown-paid-invoices'),
 ]

@@ -1,3 +1,27 @@
+    const refreshPipelinePosts = async () => {
+      if (localStorage.getItem("demoMode")) return;
+      try {
+        const kanbanItems = await api.kanban.list();
+        const mapped = (kanbanItems || []).map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          platform: item.platforms?.[0] || "instagram",
+          platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
+          priority: item.priority || undefined,
+          status: mapBackendColumnToStatus(item.column),
+          dueDate: item.due_date,
+          creative_copy: item.creative_copy,
+          post_caption: item.post_caption,
+          description: item.creative_copy ?? item.description,
+          caption: item.post_caption ?? item.caption,
+          thumbnail: item.thumbnail,
+          media_assets: Array.isArray(item.media_assets) ? item.media_assets : undefined,
+        }));
+        setPipelinePosts(mapped.length ? mapped : MOCK_PIPELINE_POSTS);
+      } catch (e) {
+        // ignore
+      }
+    };
 import React, { useState, useEffect } from "react";
 import {
   BarChart,
@@ -496,7 +520,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
             priority: item.priority || undefined,
             status: mapBackendColumnToStatus(item.column),
             dueDate: item.due_date,
-            description: item.description,
+            creative_copy: item.creative_copy,
+            post_caption: item.post_caption,
+            // backward-compat for older UI usages
+            description: item.creative_copy ?? item.description,
+            caption: item.post_caption ?? item.caption,
             thumbnail: item.thumbnail,
           }));
 
@@ -790,24 +818,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
     await handleApprovePostById(postId);
   };
 
-  const handleRequestChangesById = async (postId: string | number) => {
-    const reason = prompt("Feedback for the team:");
-    if (reason) {
-      setPipelinePosts((prev) =>
-        prev.map((post) =>
-          post.id === postId ? { ...post, status: "review" } : post
-        )
+  const handleRequestChangesById = async (
+    postId: string | number,
+    reviseNotes?: string
+  ) => {
+    setPipelinePosts((prev) =>
+      prev.map((post) =>
+        post.id === postId ? { ...post, status: "writing" } : post
+      )
+    );
+    if (selectedPost?.id === postId)
+      setSelectedPost((prev) =>
+        prev ? { ...prev, status: "writing" } : null
       );
-      if (selectedPost?.id === postId)
-        setSelectedPost((prev) =>
-          prev ? { ...prev, status: "review" } : null
-        );
-      if (!localStorage.getItem("demoMode")) {
-        try {
-          await api.kanban.approve(postId as number, "revise");
-        } catch (e) {
-          console.error(e);
-        }
+    if (!localStorage.getItem("demoMode")) {
+      try {
+        await api.kanban.approve(postId as number, "revise", reviseNotes);
+      } catch (e) {
+        console.error(e);
       }
     }
   };
@@ -1395,16 +1423,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                         {posts.length === 0 && (
                           <div className="h-24 border-2 border-dashed rounded-xl flex flex-col items-center justify-center text-slate-400 text-xs italic">
                             <div>No items</div>
-                            <div className="mt-3">
-                              <button
-                                onClick={() =>
-                                  onNavigate?.("admin-dashboard", "pipeline")
-                                }
-                                className="px-3 py-1.5 bg-[#6C5CE7] text-white rounded-lg text-xs font-bold"
-                              >
-                                Add Task
-                              </button>
-                            </div>
                           </div>
                         )}
                         {posts.map((post) => (
@@ -1415,6 +1433,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                             onDragStart={handleDragStart}
                             onApprove={handleApprovePostById}
                             onRevise={handleRequestChangesById}
+                            onRefresh={refreshPipelinePosts}
                           />
                         ))}
                       </div>

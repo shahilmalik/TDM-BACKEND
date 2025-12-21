@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 from core.models import BaseModel, CustomUser, Service
 
 
@@ -45,16 +46,9 @@ APPROVAL_STATUS = [
     ("revise_needed", "Revise Needed"),
 ]
 
-PACKAGE_TYPES = [
-    ("spark", "Spark"),
-    ("growth", "Growth"),
-    ("enterprise", "Enterprise"),
-]
-
-
 class ContentItem(BaseModel):
     title = models.CharField(max_length=200)
-    description = models.TextField(blank=True, null=True)
+    creative_copy = models.TextField(blank=True, null=True)
     due_date = models.DateField(null=True, blank=True)
     platforms = models.JSONField(default=list)
     column = models.CharField(max_length=50, choices=KANBAN_COLUMNS, default='backlog')
@@ -79,7 +73,6 @@ class ContentItem(BaseModel):
         related_name="content_items",
     )
     created_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, related_name='created_content_items')
-    package = models.CharField(max_length=20, choices=PACKAGE_TYPES, default="spark")
     approval_status = models.CharField(max_length=20, choices=APPROVAL_STATUS, default="pending")
 
     # approval
@@ -104,7 +97,7 @@ class ContentItem(BaseModel):
 
     # platform & creative metadata
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPE, blank=True, null=True)
-    caption = models.TextField(blank=True, null=True)
+    post_caption = models.TextField(blank=True, null=True)
     platform_caption_overrides = models.JSONField(default=dict, blank=True)
     hashtags = models.JSONField(default=list, blank=True)
     is_carousel = models.BooleanField(default=False)
@@ -139,6 +132,10 @@ class ContentItem(BaseModel):
     def move_to(self, user, target_column):
         if not self.can_move(user, target_column):
             raise ValueError("You do not have permission to move this item.")
+        try:
+            self._history_user = user
+        except Exception:
+            pass
         self.column = target_column
         # Reset approval status if moving to client approval
         if target_column == "client_approval":
@@ -187,3 +184,75 @@ class MetaLocationCache(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.place_id})"
+
+
+COMMENT_ROLES = [
+    ("client", "Client"),
+    ("agency", "Agency"),
+]
+
+
+class ContentComment(BaseModel):
+    content_item = models.ForeignKey(
+        "kanban.ContentItem",
+        on_delete=models.CASCADE,
+        related_name="comments",
+    )
+    # A comment can have only one reply. The reply is itself a ContentComment with parent set.
+    parent = models.OneToOneField(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="reply",
+    )
+
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="content_comments",
+    )
+    role = models.CharField(max_length=10, choices=COMMENT_ROLES)
+    text = models.TextField()
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def clean(self):
+        # replies cannot reply to replies
+        if self.parent and self.parent.parent_id is not None:
+            raise ValueError("You can only reply to a top-level comment.")
+        # keep replies scoped to the same content item
+        if self.parent and self.content_item and self.parent.content_item != self.content_item:
+            raise ValueError("Reply content item must match parent content item.")
+
+    def save(self, *args, **kwargs):
+        # If reply, inherit content_item from parent (single source of truth)
+        if self.parent is not None:
+            self.content_item = self.parent.content_item
+        super().save(*args, **kwargs)
+
+
+class ContentItemCommentRead(BaseModel):
+    """Tracks the last time a user read the comments for a content item."""
+
+    content_item = models.ForeignKey(
+        "kanban.ContentItem",
+        on_delete=models.CASCADE,
+        related_name="comment_reads",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="comment_reads",
+    )
+    last_read_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        unique_together = ("content_item", "user")
+        indexes = [
+            models.Index(fields=["content_item", "user"]),
+            models.Index(fields=["user", "last_read_at"]),
+        ]

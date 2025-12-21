@@ -100,8 +100,18 @@ export interface PipelinePost {
   status: PipelineStatus;
   dueDate: string;
   thumbnail?: string;
+  media_assets?: Array<{
+    id?: string | number;
+    file?: string;
+    public_url?: string;
+    media_type?: string;
+    order?: number;
+    is_active?: boolean;
+  }>;
   caption?: string;
   description?: string;
+  creative_copy?: string;
+  post_caption?: string;
   comments?: Comment[];
   discussions?: Comment[];
   hashtags?: string[];
@@ -119,6 +129,8 @@ export interface PipelinePost {
   } | null;
   media_assets?: Array<{ file: string }>;
   history?: HistoryEntry[];
+
+  unread_comments_count?: number;
 
   location?: string;
 }

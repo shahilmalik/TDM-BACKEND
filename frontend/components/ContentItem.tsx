@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Instagram,
   Facebook,
   Linkedin,
   Twitter,
+  Youtube,
   Calendar,
   User,
   MapPin,
@@ -20,16 +21,18 @@ import {
   Check,
   Reply,
   History,
-  Plus,
 } from "lucide-react";
 import { PipelinePost, Comment, HistoryEntry } from "../types";
+import { api } from "../services/api";
 
 interface ContentItemProps {
   post: PipelinePost;
   isAdmin?: boolean;
   onApprove?: (id: string | number) => void;
-  onRevise?: (id: string | number) => void;
+  onRevise?: (id: string | number, reviseNotes?: string) => void;
+  onSchedule?: (id: string | number, scheduledAtIso: string) => void;
   onDragStart?: (e: React.DragEvent, id: string | number) => void;
+  onRefresh?: () => void | Promise<void>;
 }
 
 const ContentItem: React.FC<ContentItemProps> = ({
@@ -37,13 +40,18 @@ const ContentItem: React.FC<ContentItemProps> = ({
   isAdmin,
   onApprove,
   onRevise,
+  onSchedule,
   onDragStart,
+  onRefresh,
 }) => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const [hashtags, setHashtags] = useState<string[]>(post.hashtags || []);
   const [newHashtag, setNewHashtag] = useState("");
+
+  const isClientUser = isAdmin === false;
+  const canAgencyEdit = isAdmin === true;
 
   const seedComments: Comment[] =
     (post.discussions && Array.isArray(post.discussions)
@@ -75,7 +83,7 @@ const ContentItem: React.FC<ContentItemProps> = ({
         ]
   );
 
-  const [history] = useState<HistoryEntry[]>(
+  const seedHistory: HistoryEntry[] =
     post.history && post.history.length
       ? post.history
       : [
@@ -91,10 +99,148 @@ const ContentItem: React.FC<ContentItemProps> = ({
             action: "Updated status to Content Writing",
             timestamp: "2.5 hours ago",
           },
-        ]
-  );
+        ];
+
+  const [history, setHistory] = useState<HistoryEntry[]>(seedHistory);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [commentInput, setCommentInput] = useState("");
+  const [isDiscussionLoading, setIsDiscussionLoading] = useState(false);
+  const [discussionError, setDiscussionError] = useState<string | null>(null);
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [replyInput, setReplyInput] = useState("");
+
+  const unreadCommentsCount = useMemo(() => {
+    const n = Number((post as any)?.unread_comments_count ?? 0);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  }, [post]);
+
+  const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
+  const [revisionNotes, setRevisionNotes] = useState("");
+
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [scheduleInput, setScheduleInput] = useState("");
+
+  const postIdForApi = useMemo(() => {
+    // Only attempt API calls for numeric IDs (real backend items)
+    const n = Number(post.id);
+    return Number.isFinite(n) ? n : null;
+  }, [post.id]);
+
+  const normalizePlatform = (p: string) => {
+    const v = String(p || "").trim().toLowerCase();
+    if (v === "x") return "twitter";
+    if (v === "linkedn") return "linkedin";
+    return v;
+  };
+
+  const ALL_PLATFORMS = [
+    "instagram",
+    "facebook",
+    "twitter",
+    "youtube",
+    "linkedin",
+    "amazon",
+    "flipkart",
+    "meesho",
+    "swiggy",
+    "zomato",
+    "zepto",
+  ];
+
+  const formatHistoryTimestamp = (raw: any) => {
+    if (!raw) return "";
+    try {
+      const d = new Date(String(raw));
+      if (!Number.isNaN(d.getTime())) return d.toLocaleString();
+    } catch (e) {}
+    return String(raw);
+  };
+
+  const normalizeComment = (raw: any): Comment => {
+    const createdAt = raw?.date || raw?.created_at || raw?.createdAt;
+    const dateStr = createdAt
+      ? new Date(createdAt).toLocaleString()
+      : raw?.date || "";
+
+    const replies = Array.isArray(raw?.replies) ? raw.replies : [];
+    return {
+      id: String(raw?.id ?? ""),
+      author: raw?.author || "Unknown",
+      role: raw?.role === "client" ? "client" : "agency",
+      text: raw?.text || "",
+      date: dateStr,
+      replies: replies.map((r: any) => ({
+        id: String(r?.id ?? ""),
+        author: r?.author || "Unknown",
+        role: r?.role === "client" ? "client" : "agency",
+        text: r?.text || "",
+        date: r?.date || (r?.created_at ? new Date(r.created_at).toLocaleString() : ""),
+      })),
+    };
+  };
+
+  const loadDiscussion = async () => {
+    if (!postIdForApi) return;
+    setIsDiscussionLoading(true);
+    setDiscussionError(null);
+    try {
+      const res = await api.kanban.comments.list(postIdForApi);
+      const list = Array.isArray(res) ? res : [];
+      setComments(list.map(normalizeComment));
+
+      // Mark thread as read when opened/loaded.
+      try {
+        await api.kanban.comments.markRead(postIdForApi);
+        if (onRefresh) await onRefresh();
+      } catch {
+        // ignore
+      }
+    } catch (e: any) {
+      setDiscussionError(e?.message || "Failed to load discussion.");
+    } finally {
+      setIsDiscussionLoading(false);
+    }
+  };
+
+  const loadHistory = async () => {
+    if (!postIdForApi) return;
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const res: any = await api.kanban.activity(postIdForApi);
+      const list = Array.isArray(res?.history) ? res.history : [];
+      if (list.length) {
+        setHistory(
+          list.map((h: any) => ({
+            id: String(h?.id ?? ""),
+            user: String(h?.user ?? "System"),
+            action: String(h?.action ?? "Updated"),
+            timestamp: formatHistoryTimestamp(h?.timestamp),
+          }))
+        );
+      } else if (post.history && post.history.length) {
+        setHistory(post.history);
+      } else {
+        setHistory(seedHistory);
+      }
+    } catch (e: any) {
+      setHistoryError(e?.message || "Failed to load activity history.");
+      if (post.history && post.history.length) setHistory(post.history);
+      else setHistory(seedHistory);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isDetailOpen) return;
+    // Load from backend when opening details (for real items)
+    loadDiscussion();
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDetailOpen, postIdForApi]);
 
   const handleCopy = (text: string, field: string) => {
     try {
@@ -106,15 +252,27 @@ const ContentItem: React.FC<ContentItemProps> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const addHashtag = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newHashtag && !hashtags.includes(newHashtag)) {
-      setHashtags([
-        ...hashtags,
-        newHashtag.startsWith("#") ? newHashtag : `#${newHashtag}`,
-      ]);
-      setNewHashtag("");
-    }
+  const addHashtagFromInput = () => {
+    if (isClientUser) return;
+    const raw = newHashtag.trim();
+    if (!raw) return;
+
+    const tokens = raw
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    if (tokens.length === 0) return;
+
+    setHashtags((prev) => {
+      const next = [...prev];
+      for (const token of tokens) {
+        const cleaned = token.startsWith("#") ? token : `#${token}`;
+        if (!next.includes(cleaned)) next.push(cleaned);
+      }
+      return next;
+    });
+    setNewHashtag("");
   };
 
   const removeHashtag = (tag: string) => {
@@ -124,15 +282,81 @@ const ContentItem: React.FC<ContentItemProps> = ({
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentInput.trim()) return;
-    const newMsg: Comment = {
-      id: Date.now().toString(),
-      author: isAdmin ? "Agency Admin" : "Client User",
-      role: isAdmin ? "agency" : "client",
-      text: commentInput,
-      date: "Just now",
+
+    const submit = async () => {
+      // If we have a real backend item, persist
+      if (postIdForApi) {
+        setIsDiscussionLoading(true);
+        setDiscussionError(null);
+        try {
+          await api.kanban.comments.create(postIdForApi, commentInput.trim());
+          setCommentInput("");
+          setReplyingToId(null);
+          setReplyInput("");
+          await loadDiscussion();
+          return;
+        } catch (e: any) {
+          setDiscussionError(e?.message || "Failed to add comment.");
+        } finally {
+          setIsDiscussionLoading(false);
+        }
+      }
+
+      // Fallback to local mock
+      const newMsg: Comment = {
+        id: Date.now().toString(),
+        author: isAdmin ? "Agency Admin" : "Client User",
+        role: isAdmin ? "agency" : "client",
+        text: commentInput,
+        date: "Just now",
+      };
+      setComments([...comments, newMsg]);
+      setCommentInput("");
     };
-    setComments([...comments, newMsg]);
-    setCommentInput("");
+
+    // fire and forget
+    void submit();
+  };
+
+  const handleReply = async (parentComment: Comment) => {
+    if (!replyInput.trim()) return;
+    if (parentComment.replies && parentComment.replies.length > 0) return;
+    if (!postIdForApi) {
+      // local mock
+      setComments((prev) =>
+        prev.map((c) => {
+          if (String(c.id) !== String(parentComment.id)) return c;
+          return {
+            ...c,
+            replies: [
+              {
+                id: Date.now().toString(),
+                author: isAdmin ? "Agency Admin" : "Client User",
+                role: isAdmin ? "agency" : "client",
+                text: replyInput.trim(),
+                date: "Just now",
+              },
+            ],
+          };
+        })
+      );
+      setReplyInput("");
+      setReplyingToId(null);
+      return;
+    }
+
+    setIsDiscussionLoading(true);
+    setDiscussionError(null);
+    try {
+      await api.kanban.comments.reply(parentComment.id, replyInput.trim());
+      setReplyInput("");
+      setReplyingToId(null);
+      await loadDiscussion();
+    } catch (e: any) {
+      setDiscussionError(e?.message || "Failed to add reply.");
+    } finally {
+      setIsDiscussionLoading(false);
+    }
   };
 
   const getPriorityStyles = (priority: string) => {
@@ -155,7 +379,10 @@ const ContentItem: React.FC<ContentItemProps> = ({
       case "linkedin":
         return <Linkedin size={14} className="text-blue-700" />;
       case "twitter":
+      case "x":
         return <Twitter size={14} className="text-sky-500" />;
+      case "youtube":
+        return <Youtube size={14} className="text-red-600" />;
       default:
         return <LinkIcon size={14} className="text-slate-400" />;
     }
@@ -172,7 +399,15 @@ const ContentItem: React.FC<ContentItemProps> = ({
         .map((a) => toInitial(a))
         .filter((x) => Boolean(x));
     }
-    if (post.assigned_to?.first_name) return [toInitial(post.assigned_to.first_name)];
+    if (post.assigned_to) {
+      const name =
+        post.assigned_to.first_name ||
+        post.assigned_to.last_name ||
+        (post.assigned_to as any)?.email ||
+        "";
+      const initial = toInitial(name);
+      return initial ? [initial] : [];
+    }
     return [];
   })();
 
@@ -215,9 +450,48 @@ const ContentItem: React.FC<ContentItemProps> = ({
           {comment.text}
         </p>
         {!isReply && (
-          <button className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-[#6C5CE7] transition-colors">
+          <button
+            disabled={(comment.replies || []).length > 0}
+            onClick={() => {
+              if ((comment.replies || []).length > 0) return;
+              setReplyingToId(String(comment.id));
+              setReplyInput("");
+            }}
+            className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-[#6C5CE7] disabled:opacity-40 disabled:hover:text-slate-400 transition-colors"
+          >
             <Reply size={12} /> REPLY
           </button>
+        )}
+
+        {!isReply && replyingToId === String(comment.id) && (
+          <div className="mt-3">
+            <textarea
+              value={replyInput}
+              onChange={(e) => setReplyInput(e.target.value)}
+              placeholder="Write a reply..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-[#6C5CE7] transition-all min-h-[70px]"
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setReplyingToId(null);
+                  setReplyInput("");
+                }}
+                className="px-3 py-2 text-xs font-bold bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!replyInput.trim() || isDiscussionLoading}
+                onClick={() => void handleReply(comment)}
+                className="px-3 py-2 text-xs font-bold bg-[#6C5CE7] text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 transition-colors"
+              >
+                Reply
+              </button>
+            </div>
+          </div>
         )}
         {comment.replies?.map((reply) => (
           <React.Fragment key={reply.id}>
@@ -231,22 +505,55 @@ const ContentItem: React.FC<ContentItemProps> = ({
   const displayThumbnail =
     post.thumbnail ||
     (post.media_assets && post.media_assets[0]?.file) ||
+    (post.media_assets && post.media_assets[0]?.public_url) ||
     undefined;
 
-  const platforms =
+  const initialPlatforms =
     post.platforms && post.platforms.length
       ? post.platforms
       : post.platform
         ? [post.platform]
         : [];
 
+  const [editablePlatforms, setEditablePlatforms] = useState<string[]>(
+    (initialPlatforms || []).map(normalizePlatform)
+  );
+
+  const platforms = editablePlatforms;
   const kanbanPlatforms = platforms.slice(0, 2);
-  const extraPlatformsCount = Math.max(0, platforms.length - kanbanPlatforms.length);
+  const extraPlatformsCount = Math.max(
+    0,
+    platforms.length - kanbanPlatforms.length
+  );
 
   const visibleAssignees = assigneeInitials.slice(0, 2);
   const extraAssigneesCount = Math.max(0, assigneeInitials.length - visibleAssignees.length);
 
-  const priority = post.priority || "low";
+  const [editablePriority, setEditablePriority] = useState<string>(
+    String(post.priority || "low")
+  );
+
+  const [employees, setEmployees] = useState<
+    Array<{ id: string; label: string }>
+  >([]);
+  const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
+  const [editableAssigneeId, setEditableAssigneeId] = useState<string>(
+    String((post as any)?.assigned_to?.id ?? "")
+  );
+
+  useEffect(() => {
+    // Sync local editable state when parent refreshes
+    setEditablePriority(String(post.priority || "low"));
+    const nextPlatforms =
+      post.platforms && post.platforms.length
+        ? post.platforms
+        : post.platform
+          ? [post.platform]
+          : [];
+    setEditablePlatforms((nextPlatforms || []).map(normalizePlatform));
+    setEditableAssigneeId(String((post as any)?.assigned_to?.id ?? ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id, (post as any)?.updated_at]);
 
   const clientName = post.client
     ? `${post.client.first_name || ""} ${post.client.last_name || ""}`.trim()
@@ -255,6 +562,71 @@ const ContentItem: React.FC<ContentItemProps> = ({
   const assignedName = post.assigned_to
     ? `${post.assigned_to.first_name || ""} ${post.assigned_to.last_name || ""}`.trim()
     : "Unassigned";
+
+  const creativeCopyText =
+    (post as any).creative_copy ?? post.description ?? "";
+  const postCaptionText =
+    (post as any).post_caption ?? post.caption ?? "";
+
+  const canClientRequestRevision = isClientUser && post.status === "approval";
+  const canAgencySchedule = isAdmin === true && postIdForApi !== null;
+
+  const savePatch = async (data: any) => {
+    if (!postIdForApi) return;
+    try {
+      await api.kanban.update(postIdForApi, data);
+      if (onRefresh) await onRefresh();
+    } catch (e) {
+      // Keep UI responsive; parent refresh will reflect true state
+    }
+  };
+
+  const togglePlatform = async (p: string) => {
+    const v = normalizePlatform(p);
+    const next = platforms.includes(v)
+      ? platforms.filter((x) => x !== v)
+      : [...platforms, v];
+    setEditablePlatforms(next);
+    await savePatch({ platforms: next });
+  };
+
+  const handleUploadImage = async (file: File) => {
+    if (!postIdForApi) return;
+    try {
+      await api.kanban.uploadMedia(postIdForApi, file, "image");
+      if (onRefresh) await onRefresh();
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  const loadEmployees = async () => {
+    if (!canAgencyEdit) return;
+    setIsEmployeesLoading(true);
+    try {
+      const res: any = await api.employee.list({ page: 1, page_size: 200 });
+      const data = Array.isArray(res) ? res : res?.results || [];
+      setEmployees(
+        (data || []).map((e: any) => ({
+          id: String(e.id),
+          label: `${e.salutation || ""} ${e.first_name || ""} ${
+            e.last_name || ""
+          }`.trim() || String(e.email || `User #${e.id}`),
+        }))
+      );
+    } catch (e) {
+      setEmployees([]);
+    } finally {
+      setIsEmployeesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isDetailOpen) return;
+    if (!canAgencyEdit) return;
+    loadEmployees();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDetailOpen]);
 
   return (
     <>
@@ -287,10 +659,10 @@ const ContentItem: React.FC<ContentItemProps> = ({
           </div>
           <span
             className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${getPriorityStyles(
-              priority
+              editablePriority
             )}`}
           >
-            {priority}
+            {editablePriority}
           </span>
         </div>
 
@@ -314,6 +686,12 @@ const ContentItem: React.FC<ContentItemProps> = ({
             <Calendar size={10} />
             <span>{post.dueDate}</span>
           </div>
+          {unreadCommentsCount > 0 && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-red-50 text-red-700 border border-red-100 font-black">
+              <MessageSquare size={10} />
+              <span>{unreadCommentsCount}</span>
+            </div>
+          )}
           {assigneeInitials.length > 0 && (
             <div className="flex items-center gap-2">
               <div className="flex -space-x-2">
@@ -399,6 +777,24 @@ const ContentItem: React.FC<ContentItemProps> = ({
                 )}
               </div>
 
+              {canAgencyEdit && postIdForApi && (
+                <div className="mt-4">
+                  <label className="inline-block px-4 py-2 bg-white/90 border border-white rounded-xl text-xs font-black text-slate-700 cursor-pointer hover:bg-white transition-colors">
+                    Add Image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handleUploadImage(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+
               {/* Visual Metadata */}
               <div className="mt-8 space-y-4">
                 <div className="flex gap-2 flex-wrap">
@@ -412,27 +808,66 @@ const ContentItem: React.FC<ContentItemProps> = ({
                   ))}
                 </div>
 
+                {canAgencyEdit && postIdForApi && (
+                  <div className="bg-white/50 backdrop-blur rounded-2xl p-4 border border-white/50">
+                    <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <Tag size={12} className="text-[#6C5CE7]" /> Platforms
+                    </h5>
+                    <div className="flex flex-wrap gap-2">
+                      {ALL_PLATFORMS.map((p) => {
+                        const active = platforms.includes(normalizePlatform(p));
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => void togglePlatform(p)}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-colors ${
+                              active
+                                ? "bg-violet-50 text-[#6C5CE7] border-violet-100"
+                                : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {p === "twitter" ? "X" : p}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* History Log */}
                 <div className="bg-white/50 backdrop-blur rounded-2xl p-4 border border-white/50">
                   <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                     <History size={12} className="text-[#6C5CE7]" /> Activity
                     History
                   </h5>
-                  <div className="space-y-3">
-                    {history.map((h) => (
-                      <div key={h.id} className="flex gap-2">
-                        <div className="w-1.5 h-1.5 bg-slate-300 rounded-full mt-1.5 shrink-0"></div>
-                        <div className="text-[11px] leading-tight">
-                          <span className="font-bold text-slate-700">
-                            {h.user}
-                          </span>{" "}
-                          <span className="text-slate-500">{h.action}</span>
-                          <p className="text-[9px] text-slate-400 font-medium mt-0.5">
-                            {h.timestamp}
-                          </p>
-                        </div>
+                  {historyError && (
+                    <div className="mb-2 text-[10px] font-bold text-red-600">
+                      {historyError}
+                    </div>
+                  )}
+                  <div className="max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                    {isHistoryLoading && (
+                      <div className="text-[10px] text-slate-400 font-medium">
+                        Loading activity...
                       </div>
-                    ))}
+                    )}
+                    <div className="space-y-3">
+                      {history.map((h) => (
+                        <div key={h.id} className="flex gap-2">
+                          <div className="w-1.5 h-1.5 bg-slate-300 rounded-full mt-1.5 shrink-0"></div>
+                          <div className="text-[11px] leading-tight">
+                            <span className="font-bold text-slate-700">
+                              {h.user}
+                            </span>{" "}
+                            <span className="text-slate-500">{h.action}</span>
+                            <p className="text-[9px] text-slate-400 font-medium mt-0.5">
+                              {h.timestamp}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -442,13 +877,31 @@ const ContentItem: React.FC<ContentItemProps> = ({
             <div className="w-full md:w-7/12 p-8 overflow-y-auto bg-white max-h-[90vh] custom-scrollbar">
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-2">
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${getPriorityStyles(
-                      priority
-                    )}`}
-                  >
-                    {priority} Priority
-                  </span>
+                  {canAgencyEdit && postIdForApi ? (
+                    <select
+                      value={editablePriority}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setEditablePriority(v);
+                        void savePatch({ priority: v });
+                      }}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border outline-none ${getPriorityStyles(
+                        editablePriority
+                      )}`}
+                    >
+                      <option value="low">Low Priority</option>
+                      <option value="medium">Medium Priority</option>
+                      <option value="high">High Priority</option>
+                    </select>
+                  ) : (
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${getPriorityStyles(
+                        editablePriority
+                      )}`}
+                    >
+                      {editablePriority} Priority
+                    </span>
+                  )}
                   <span className="bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border border-slate-200">
                     ID: #{post.id}
                   </span>
@@ -459,32 +912,6 @@ const ContentItem: React.FC<ContentItemProps> = ({
               </div>
 
               <div className="space-y-8">
-                {/* Description */}
-                <div>
-                  <div className="flex justify-between items-center mb-3">
-                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <FileText size={12} className="text-[#6C5CE7]" />
-                      Internal Brief
-                    </h5>
-                    <button
-                      onClick={() => handleCopy(post.description || "", "desc")}
-                      className="p-1.5 text-slate-400 hover:text-[#6C5CE7] hover:bg-violet-50 rounded-lg transition-all"
-                      title="Copy Brief"
-                    >
-                      {copiedField === "desc" ? (
-                        <Check size={14} className="text-green-500" />
-                      ) : (
-                        <Copy size={14} />
-                      )}
-                    </button>
-                  </div>
-                  <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 relative group">
-                    <p className="text-slate-700 text-sm leading-relaxed italic">
-                      "{post.description || "No internal brief provided."}"
-                    </p>
-                  </div>
-                </div>
-
                 <div className="grid grid-cols-2 gap-6">
                   <div>
                     <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
@@ -505,30 +932,102 @@ const ContentItem: React.FC<ContentItemProps> = ({
                       Assigned To
                     </h5>
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-violet-50 text-[#6C5CE7] flex items-center justify-center font-bold text-xs">
-                        {(post.assigned_to?.first_name?.[0] || "U") +
-                          (post.assigned_to?.last_name?.[0] || "A")}
-                      </div>
+                      {assigneeInitials.length > 0 ? (
+                        <div className="flex -space-x-2">
+                          {visibleAssignees.map((initial, idx) => (
+                            <div
+                              key={`${initial}-${idx}`}
+                              className="w-8 h-8 rounded-lg bg-violet-50 text-[#6C5CE7] border border-violet-100 flex items-center justify-center text-xs font-black"
+                              title="Assigned"
+                            >
+                              {initial}
+                            </div>
+                          ))}
+                          {extraAssigneesCount > 0 && (
+                            <div
+                              className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 flex items-center justify-center text-[10px] font-black"
+                              title={`${extraAssigneesCount} more assignee(s)`}
+                            >
+                              +{extraAssigneesCount}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 flex items-center justify-center text-xs font-black">
+                          -
+                        </div>
+                      )}
                       <p className="text-sm font-bold text-slate-800">
                         {assignedName}
                       </p>
                     </div>
+
+                    {canAgencyEdit && postIdForApi && (
+                      <div className="mt-2">
+                        <select
+                          value={editableAssigneeId}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEditableAssigneeId(v);
+                            void savePatch({
+                              assigned_to_id: v ? Number(v) : null,
+                            });
+                          }}
+                          disabled={isEmployeesLoading}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-[#6C5CE7]"
+                        >
+                          <option value="">
+                            {isEmployeesLoading
+                              ? "Loading..."
+                              : "Unassigned"}
+                          </option>
+                          {employees.map((e) => (
+                            <option key={e.id} value={e.id}>
+                              {e.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Caption */}
+                {/* Creative Copy */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
                     <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <Tag size={12} className="text-[#6C5CE7]" /> Caption &
-                      Copy
+                      <FileText size={12} className="text-[#6C5CE7]" />
+                      Creative Copy
                     </h5>
                     <button
-                      onClick={() =>
-                        handleCopy(post.caption || "", "caption")
-                      }
+                      onClick={() => handleCopy(String(creativeCopyText || ""), "desc")}
                       className="p-1.5 text-slate-400 hover:text-[#6C5CE7] hover:bg-violet-50 rounded-lg transition-all"
-                      title="Copy Caption"
+                      title="Copy Creative Copy"
+                    >
+                      {copiedField === "desc" ? (
+                        <Check size={14} className="text-green-500" />
+                      ) : (
+                        <Copy size={14} />
+                      )}
+                    </button>
+                  </div>
+                  <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 relative group">
+                    <p className="text-slate-700 text-sm leading-relaxed italic">
+                      "{creativeCopyText || "No creative copy provided."}"
+                    </p>
+                  </div>
+                </div>
+
+                {/* Post Caption */}
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Tag size={12} className="text-[#6C5CE7]" /> Post Caption
+                    </h5>
+                    <button
+                      onClick={() => handleCopy(String(postCaptionText || ""), "caption")}
+                      className="p-1.5 text-slate-400 hover:text-[#6C5CE7] hover:bg-violet-50 rounded-lg transition-all"
+                      title="Copy Post Caption"
                     >
                       {copiedField === "caption" ? (
                         <Check size={14} className="text-green-500" />
@@ -538,7 +1037,7 @@ const ContentItem: React.FC<ContentItemProps> = ({
                     </button>
                   </div>
                   <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 text-sm text-slate-600 font-medium whitespace-pre-line leading-relaxed min-h-[100px]">
-                    {post.caption ||
+                    {postCaptionText ||
                       "Content copy will be updated here after writing phase."}
                   </div>
                 </div>
@@ -555,30 +1054,34 @@ const ContentItem: React.FC<ContentItemProps> = ({
                         className="flex items-center gap-1 bg-violet-50 text-[#6C5CE7] px-3 py-1 rounded-lg text-xs font-bold border border-violet-100 hover:border-violet-300 transition-colors"
                       >
                         {tag}
-                        <button
-                          onClick={() => removeHashtag(tag)}
-                          className="hover:text-red-500"
-                        >
-                          <X size={12} />
-                        </button>
+                        {!isClientUser && (
+                          <button
+                            onClick={() => removeHashtag(tag)}
+                            className="hover:text-red-500"
+                            title="Remove hashtag"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
-                  <form onSubmit={addHashtag} className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newHashtag}
-                      onChange={(e) => setNewHashtag(e.target.value)}
-                      placeholder="Add new hashtag..."
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs outline-none focus:border-[#6C5CE7] transition-all"
-                    />
-                    <button
-                      type="submit"
-                      className="bg-[#6C5CE7] text-white p-2 rounded-xl hover:bg-violet-700 transition-all"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </form>
+                  {!isClientUser && (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newHashtag}
+                        onChange={(e) => setNewHashtag(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          e.preventDefault();
+                          addHashtagFromInput();
+                        }}
+                        placeholder="Type a hashtag and press Enter..."
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-xs outline-none focus:border-[#6C5CE7] transition-all"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Location */}
@@ -598,12 +1101,22 @@ const ContentItem: React.FC<ContentItemProps> = ({
                     Discussion Thread
                   </h5>
 
-                  <div className="mb-8">
-                    {comments.map((c) => (
-                      <React.Fragment key={c.id}>
-                        <CommentCard comment={c} />
-                      </React.Fragment>
-                    ))}
+                  {discussionError && (
+                    <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-sm">
+                      {discussionError}
+                    </div>
+                  )}
+
+                  <div className="mb-8 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                    {isDiscussionLoading && comments.length === 0 ? (
+                      <div className="text-sm text-slate-400">Loading…</div>
+                    ) : (
+                      comments.map((c) => (
+                        <React.Fragment key={c.id}>
+                          <CommentCard comment={c} />
+                        </React.Fragment>
+                      ))
+                    )}
                   </div>
 
                   <form onSubmit={handleAddComment} className="relative">
@@ -628,7 +1141,10 @@ const ContentItem: React.FC<ContentItemProps> = ({
               {!isAdmin && post.status === "approval" && (
                 <div className="mt-10 pt-8 border-t border-slate-100 flex gap-4">
                   <button
-                    onClick={() => onRevise && onRevise(post.id)}
+                    onClick={() => {
+                      setRevisionNotes("");
+                      setIsRevisionModalOpen(true);
+                    }}
                     className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
                   >
                     <RotateCcw size={18} /> REQUEST REVISION
@@ -641,7 +1157,116 @@ const ContentItem: React.FC<ContentItemProps> = ({
                   </button>
                 </div>
               )}
+
+              {canAgencySchedule && (
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                  <button
+                    onClick={() => {
+                      setScheduleInput("");
+                      setIsScheduleModalOpen(true);
+                    }}
+                    className="w-full py-4 bg-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Calendar size={18} /> SCHEDULE
+                  </button>
+                </div>
+              )}
             </div>
+
+            {/* Revision Notes Modal (Client) */}
+            {isRevisionModalOpen && (
+              <div
+                className="absolute inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/40"
+                onClick={() => setIsRevisionModalOpen(false)}
+              >
+                <div
+                  className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-100 p-6"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 className="text-lg font-extrabold text-slate-900 mb-2">
+                    Request Revision
+                  </h3>
+                  <p className="text-sm text-slate-500 mb-4">
+                    Please describe what needs to be changed.
+                  </p>
+                  <textarea
+                    value={revisionNotes}
+                    onChange={(e) => setRevisionNotes(e.target.value)}
+                    placeholder="Enter revision notes..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm outline-none focus:border-[#6C5CE7] transition-all min-h-[120px]"
+                  />
+                  <div className="mt-4 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsRevisionModalOpen(false)}
+                      className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!revisionNotes.trim()}
+                      onClick={() => {
+                        if (!revisionNotes.trim()) return;
+                        onRevise && onRevise(post.id, revisionNotes.trim());
+                        setIsRevisionModalOpen(false);
+                      }}
+                      className="flex-1 py-3 bg-[#6C5CE7] text-white rounded-xl font-bold disabled:opacity-50 hover:bg-violet-700 transition-all"
+                    >
+                      Submit
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Schedule Modal (Agency) */}
+            {isScheduleModalOpen && (
+              <div
+                className="absolute inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/40"
+                onClick={() => setIsScheduleModalOpen(false)}
+              >
+                <div
+                  className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-100 p-6"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 className="text-lg font-extrabold text-slate-900 mb-2">
+                    Schedule
+                  </h3>
+                  <p className="text-sm text-slate-500 mb-4">
+                    Pick a date and time to schedule this item.
+                  </p>
+                  <input
+                    type="datetime-local"
+                    value={scheduleInput}
+                    onChange={(e) => setScheduleInput(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#6C5CE7] transition-all"
+                  />
+                  <div className="mt-4 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsScheduleModalOpen(false)}
+                      className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!scheduleInput}
+                      onClick={() => {
+                        if (!scheduleInput) return;
+                        const iso = new Date(scheduleInput).toISOString();
+                        onSchedule && onSchedule(post.id, iso);
+                        setIsScheduleModalOpen(false);
+                      }}
+                      className="flex-1 py-3 bg-[#6C5CE7] text-white rounded-xl font-bold disabled:opacity-50 hover:bg-violet-700 transition-all"
+                    >
+                      Schedule
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

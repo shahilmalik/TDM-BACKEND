@@ -18,6 +18,30 @@ from rest_framework.viewsets import GenericViewSet
 from kanban.models import ContentItem
 from core.pagination import StandardResultsSetPagination
 from django.db.models import Q
+from datetime import timedelta
+from django.utils import timezone
+
+
+def _get_system_user():
+    email = getattr(settings, "SYSTEM_USER_EMAIL", None) or "system@tarviz.local"
+    user = CustomUser.objects.filter(email=email).first()
+    if user:
+        return user
+
+    user = CustomUser(
+        email=email,
+        first_name="System",
+        last_name="User",
+        type="superadmin",
+        is_staff=True,
+        is_superuser=True,
+    )
+    try:
+        user.set_unusable_password()
+    except Exception:
+        pass
+    user.save()
+    return user
 
 class InvoiceViewSet(viewsets.ModelViewSet):
     queryset = Invoice.objects.all().select_related('client', 'authorized_by').prefetch_related('items__service')
@@ -202,7 +226,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                         client=invoice.client,
                         service=svc,
                         invoice=invoice,
-                        created_by=request.user,
+                        created_by=_get_system_user(),
                         due_date=invoice.start_date or None,
                     )
                     created += 1
@@ -246,19 +270,58 @@ class ClientsDropdownView(APIView):
     # permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = CustomUser.objects.filter(type='client').select_related('profile')
+        qs = CustomUser.objects.filter(type="client").values(
+            "id",
+            "first_name",
+            "last_name",
+            "email",
+            "profile__company_name",
+        )
         data = []
-        for u in qs:
-            name = None
-            try:
-                if hasattr(u, 'profile') and u.profile and getattr(u.profile, 'company_name', None):
-                    name = u.profile.company_name
-            except Exception:
-                name = None
-            if not name:
-                name = f"{u.first_name or ''} {u.last_name or ''}".strip() or u.email or str(u.id)
-            data.append({'id': u.id, 'name': name})
+        for row in qs:
+            company_name = row.get("profile__company_name")
+            if company_name:
+                name = company_name
+            else:
+                full_name = f"{row.get('first_name') or ''} {row.get('last_name') or ''}".strip()
+                name = full_name or row.get("email") or str(row.get("id"))
+            data.append({"id": row.get("id"), "name": name})
         return Response(data)
+
+
+class PaidInvoicesDropdownView(APIView):
+    """Return paid invoices for a given client within the past 30 days."""
+
+    def get(self, request):
+        client_id = request.query_params.get("client_id") or request.query_params.get(
+            "client"
+        )
+        if not client_id:
+            return Response(
+                {"detail": "client_id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            client_id_int = int(client_id)
+        except Exception:
+            return Response(
+                {"detail": "client_id must be an integer"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cutoff = timezone.localdate() - timedelta(days=30)
+        qs = (
+            Invoice.objects.filter(
+                client_id=client_id_int,
+                status="paid",
+                date__gte=cutoff,
+            )
+            .order_by("-date", "-id")
+            .values("id", "invoice_id", "date")
+        )
+
+        return Response({"success": True, "invoices": list(qs)})
 
 
 class InvoiceStatusesDropdownView(APIView):

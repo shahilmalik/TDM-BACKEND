@@ -27,6 +27,11 @@ const getHeaders = () => {
   };
 };
 
+const getAuthHeaderOnly = () => {
+  const token = localStorage.getItem("accessToken");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 // Attempt to refresh access token using stored refresh token.
 const refreshAccessToken = async (): Promise<string | null> => {
   const refresh = localStorage.getItem("refreshToken");
@@ -405,6 +410,13 @@ export const api = {
     // Dropdowns
     getDropdownClients: () =>
       request<any[]>("/invoice/dropdowns/clients/", { method: "GET" }),
+    getDropdownPaidInvoices: (clientId: string | number) =>
+      request<{ success: boolean; invoices: Array<{ id: number; invoice_id: string; date: string }> }>(
+        `/invoice/dropdowns/paid-invoices/?client_id=${encodeURIComponent(
+          String(clientId)
+        )}`,
+        { method: "GET" }
+      ),
     getDropdownInvoiceStatuses: () =>
       request<any[]>("/invoice/dropdowns/invoice-statuses/", { method: "GET" }),
     getDropdownPaymentModes: () =>
@@ -434,16 +446,110 @@ export const api = {
   kanban: {
     // Backend endpoint exposes content items at /kanban/content-items/
     list: () => request<any[]>("/kanban/content-items/", { method: "GET" }),
+    create: (data: {
+      title: string;
+      client_id?: number | string;
+      invoice_id: number | string;
+      service_id: number | string;
+    }) =>
+      request<any>("/kanban/content-items/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
     move: (id: number, target_column: string) =>
       request<any>(`/kanban/content-items/${id}/move/`, {
         method: "POST",
         body: JSON.stringify({ target_column }),
       }),
-    approve: (id: number, action: "approve" | "revise") =>
+    approve: (id: number, action: "approve" | "revise", revise_notes?: string) =>
       request<any>(`/kanban/content-items/${id}/approve/`, {
         method: "POST",
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({
+          action,
+          ...(action === "revise" && revise_notes ? { revise_notes } : {}),
+        }),
       }),
+    schedule: (id: number, scheduled_at: string) =>
+      request<any>(`/kanban/content-items/${id}/schedule/`, {
+        method: "POST",
+        body: JSON.stringify({ scheduled_at }),
+      }),
+    update: (id: number | string, data: any) =>
+      request<any>(`/kanban/content-items/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    comments: {
+      list: (contentItemId: string | number) =>
+        request<any[]>(
+          `/kanban/comments/?content_item=${encodeURIComponent(
+            String(contentItemId)
+          )}`,
+          { method: "GET" }
+        ),
+      create: (contentItemId: string | number, text: string) =>
+        request<any>("/kanban/comments/", {
+          method: "POST",
+          body: JSON.stringify({ content_item_id: contentItemId, text }),
+        }),
+      reply: (commentId: string | number, text: string) =>
+        request<any>(`/kanban/comments/${commentId}/reply/`, {
+          method: "POST",
+          body: JSON.stringify({ text }),
+        }),
+      markRead: (contentItemId: string | number) =>
+        request<any>(
+          `/kanban/content-items/${encodeURIComponent(
+            String(contentItemId)
+          )}/comments/mark-read/`,
+          { method: "POST" }
+        ),
+    },
+    activity: (contentItemId: string | number) =>
+      request<{ success: boolean; history: any[] }>(
+        `/kanban/content-items/${encodeURIComponent(
+          String(contentItemId)
+        )}/activity/`,
+        { method: "GET" }
+      ),
+    uploadMedia: async (
+      contentItemId: string | number,
+      file: File,
+      mediaType: "image" | "video" = "image"
+    ) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("media_type", mediaType);
+
+      const res = await fetch(
+        `${BASE_URL}/kanban/content-items/${encodeURIComponent(
+          String(contentItemId)
+        )}/media/`,
+        {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            ...getAuthHeaderOnly(),
+          },
+          body: form,
+        }
+      );
+
+      const ct = res.headers.get("content-type") || "";
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          if (ct.includes("application/json")) {
+            const j = await res.json();
+            msg = j?.detail || j?.error || msg;
+          }
+        } catch (e) {}
+        throw new Error(msg);
+      }
+
+      if (ct.includes("application/json")) return res.json();
+      return res.text();
+    },
   },
   meta: {
     getInstagram: (clientId: string | number) =>
