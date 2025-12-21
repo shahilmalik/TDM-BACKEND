@@ -150,3 +150,24 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
 
 # Automatically append a trailing slash when needed (helps ignore trailing-slash issues)
 APPEND_SLASH = True
+
+# Django REST Framework settings - enable JWT authentication so front-end Bearer tokens work
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ),
+    # Allow unauthenticated access by default so public endpoints (signin/signup)
+    # work without extra per-view configuration. Protected views should set
+    # their own `permission_classes = [IsAuthenticated]` where needed.
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.AllowAny',
+    ),
+}
+
+# Optional: Simple JWT settings can be customized via environment variables if needed
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+}

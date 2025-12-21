@@ -105,6 +105,9 @@ class ClientProfile(BaseModel):
     business_phone = models.CharField(max_length=15, blank=True, null=True)
     business_phone_country_code = models.CharField(max_length=6, blank=True, null=True)
     whatsapp_updates = models.BooleanField(default=False)
+    # Temporary pending contact email change requested via OTP flow.
+    pending_contact_email = models.EmailField(blank=True, null=True)
+    pending_contact_email_verified = models.BooleanField(default=False)
     # two-letter client code used in invoice numbers; generated if missing
     client_code = models.CharField(max_length=4, blank=True, null=True, unique=True)
 

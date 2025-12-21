@@ -1,6 +1,23 @@
 from rest_framework import serializers
 from core.models import CustomUser, Service, ClientProfile, USER_TYPES, ServiceCategory
 
+
+def _normalize_phone_for_storage(phone: str | None, country_code: str | None) -> str | None:
+    if not phone:
+        return None
+    p = phone.strip()
+    # remove common separators
+    for ch in [' ', '-', '(', ')']:
+        p = p.replace(ch, '')
+    # strip leading plus
+    if p.startswith('+'):
+        p = p[1:]
+    if country_code:
+        cc = country_code.strip().lstrip('+')
+        if p.startswith(cc):
+            p = p[len(cc):]
+    return p or None
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
@@ -108,12 +125,14 @@ class ContactPersonSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
+        phone = validated_data.get('phone') or None
+        phone = _normalize_phone_for_storage(phone, validated_data.get('country_code'))
         user = CustomUser.objects.create(
             salutation=validated_data.get('salutation'),
             first_name=validated_data.get('first_name'),
             last_name=validated_data.get('last_name'),
             email=validated_data.get('email'),
-            phone=validated_data.get('phone'),
+            phone=phone,
             country_code=validated_data.get('country_code'),
             type='client',
             is_active=True,
@@ -134,10 +153,26 @@ class ClientSignupSerializer(serializers.Serializer):
     business_phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     business_phone_country_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     whatsapp_updates = serializers.BooleanField(default=False)
+
+    # accept current password when updating profile (used on update)
+    current_password = serializers.CharField(write_only=True, required=False)
     contact_person = ContactPersonSerializer()
 
     def create(self, validated_data):
         contact_data = validated_data.pop('contact_person')
+        # normalize and check for existing user to avoid IntegrityError on unique fields
+        contact_email = contact_data.get('email')
+        if contact_email:
+            contact_email = contact_email.strip().lower()
+            contact_data['email'] = contact_email
+            if CustomUser.objects.filter(email=contact_email).exists():
+                raise serializers.ValidationError({'contact_person': 'A user with this email already exists.'})
+        contact_phone = contact_data.get('phone') or None
+        if contact_phone:
+            if CustomUser.objects.filter(phone=contact_phone).exists():
+                raise serializers.ValidationError({'contact_person': 'A user with this phone already exists.'})
+        # normalize contact phone for storage
+        contact_data['phone'] = _normalize_phone_for_storage(contact_data.get('phone'), contact_data.get('country_code'))
         contact_serializer = ContactPersonSerializer(data=contact_data)
         contact_serializer.is_valid(raise_exception=True)
         contact_user = contact_serializer.save()
@@ -148,10 +183,9 @@ class ClientSignupSerializer(serializers.Serializer):
             billing_address=validated_data.get('billing_address'),
             gstin=validated_data.get('gstin'),
             business_email=validated_data.get('business_email'),
-            business_phone=validated_data.get('business_phone'),
+            business_phone=_normalize_phone_for_storage(validated_data.get('business_phone'), validated_data.get('business_phone_country_code')),
             business_phone_country_code=validated_data.get('business_phone_country_code'),
             whatsapp_updates=validated_data.get('whatsapp_updates', False),
-            contact_person=contact_user,
         )
         return profile
 
@@ -206,6 +240,8 @@ class ClientCreateUpdateSerializer(serializers.Serializer):
     whatsapp_updates = serializers.BooleanField(default=False)
 
     contact_person = serializers.DictField()  # expecting a dict with user fields
+    # accept current password when updating profile
+    current_password = serializers.CharField(write_only=True, required=False)
 
     def validate_contact_person(self, value):
         # basic required fields for contact person
@@ -219,6 +255,15 @@ class ClientCreateUpdateSerializer(serializers.Serializer):
         contact_email = contact_data.get('email')
         if contact_email:
             contact_data['email'] = contact_email.strip().lower()
+            if CustomUser.objects.filter(email=contact_data['email']).exists():
+                raise serializers.ValidationError({'contact_person': 'A user with this email already exists.'})
+        contact_phone = contact_data.get('phone') or None
+        if contact_phone:
+            if CustomUser.objects.filter(phone=contact_phone).exists():
+                raise serializers.ValidationError({'contact_person': 'A user with this phone already exists.'})
+
+        # normalize phone storage on create
+        contact_data['phone'] = _normalize_phone_for_storage(contact_data.get('phone'), contact_data.get('country_code'))
 
         user = CustomUser.objects.create(
             salutation=contact_data.get('salutation'),
@@ -239,7 +284,7 @@ class ClientCreateUpdateSerializer(serializers.Serializer):
             billing_address=validated_data.get('billing_address'),
             gstin=validated_data.get('gstin'),
             business_email=validated_data.get('business_email'),
-            business_phone=validated_data.get('business_phone'),
+            business_phone=_normalize_phone_for_storage(validated_data.get('business_phone'), validated_data.get('business_phone_country_code')),
             business_phone_country_code=validated_data.get('business_phone_country_code'),
             whatsapp_updates=validated_data.get('whatsapp_updates', False),
         )
@@ -248,10 +293,32 @@ class ClientCreateUpdateSerializer(serializers.Serializer):
     def update(self, instance, validated_data):
         # instance is a ClientProfile
         contact_data = validated_data.pop('contact_person', None)
+        # require current_password when the client is updating their own profile.
+        # allow privileged staff roles to update client profiles without the client's password.
+        request = self.context.get('request')
+        request_user = getattr(request, 'user', None)
+        request_user_type = getattr(request_user, 'type', None)
+
+        is_privileged_staff = request_user_type in ['superadmin', 'manager', 'admin']
+        is_self_update = bool(request_user and getattr(request_user, 'pk', None) == getattr(instance.user, 'pk', None))
+
+        supplied_password = validated_data.pop('current_password', None)
+        if is_self_update:
+            if not supplied_password:
+                raise serializers.ValidationError({'detail': 'current_password is required to update profile.'})
+            if not instance.user.check_password(supplied_password):
+                raise serializers.ValidationError({'detail': 'Invalid password provided.'})
+        else:
+            # non-self updates must be privileged staff; deny others
+            if not is_privileged_staff:
+                raise serializers.ValidationError({'detail': 'Not authorized to update this profile.'})
         # update profile fields
         for attr in ['company_name', 'billing_address', 'gstin', 'business_email', 'business_phone', 'business_phone_country_code', 'whatsapp_updates']:
             if attr in validated_data:
-                setattr(instance, attr, validated_data.get(attr))
+                val = validated_data.get(attr)
+                if attr == 'business_phone':
+                    val = _normalize_phone_for_storage(val, validated_data.get('business_phone_country_code') or instance.business_phone_country_code)
+                setattr(instance, attr, val)
 
         # update user
         if contact_data:
@@ -259,8 +326,24 @@ class ClientCreateUpdateSerializer(serializers.Serializer):
             # normalize email if present
             if contact_data.get('email'):
                 contact_data['email'] = contact_data.get('email').strip().lower()
+                # Allow applying the email only if it was previously verified via OTP
+                if contact_data['email'] != user.email:
+                    # prevent switching to an email already owned by another user
+                    if CustomUser.objects.filter(email=contact_data['email']).exclude(pk=user.pk).exists():
+                        raise serializers.ValidationError({'contact_person': 'A user with this email already exists.'})
+                    pending = getattr(instance, 'pending_contact_email', None)
+                    pending_verified = getattr(instance, 'pending_contact_email_verified', False)
+                    if not (pending_verified and pending and pending == contact_data['email']):
+                        raise serializers.ValidationError({'contact_person': 'To change contact email, use the email change flow that sends an OTP to the new address.'})
+                    # apply pending email and clear pending flags after applying
+                    setattr(user, 'email', contact_data['email'])
+                    instance.pending_contact_email = None
+                    instance.pending_contact_email_verified = False
             for field in ['salutation', 'first_name', 'last_name', 'email', 'phone', 'country_code']:
                 if field in contact_data:
+                    # email already handled above when matching pending change; skip to avoid overwrite
+                    if field == 'email':
+                        continue
                     setattr(user, field, contact_data.get(field))
             user.save()
 

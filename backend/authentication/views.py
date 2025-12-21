@@ -86,3 +86,16 @@ class AuthViewSet(viewsets.ViewSet):
             serializer.save()
             return Response({"success": True, "message": "Password reset successful"})
         return Response({"success": False, "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def verify_password(self, request):
+        # expects {'password': '...'} and user authenticated via token
+        password = request.data.get('password')
+        user = request.user
+        if not user or not user.is_authenticated:
+            return Response({'detail': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+        if not password:
+            return Response({'detail': 'password is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if user.check_password(password):
+            return Response({'detail': 'Password verified'}, status=status.HTTP_200_OK)
+        return Response({'detail': 'Invalid password'}, status=status.HTTP_400_BAD_REQUEST)

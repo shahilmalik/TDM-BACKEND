@@ -10,6 +10,7 @@ from .views import (
     ClientUsersAPIView,
     ServiceCategoryViewSet,
     ClientViewSet,
+    ClientSignupResendAPIView
 )
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
@@ -26,5 +27,6 @@ urlpatterns = [
     # Implemented by `EmployeeViewSet` registered below.
     path('signup/client/initiate/', ClientSignupInitiateAPIView.as_view()),
     path('signup/client/verify/', ClientSignupVerifyAPIView.as_view()),
+    path('signup/client/resend/', ClientSignupResendAPIView.as_view()),
     path('clients/users/', ClientUsersAPIView.as_view()),
 ]
