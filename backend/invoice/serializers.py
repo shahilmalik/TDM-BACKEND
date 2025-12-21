@@ -37,12 +37,19 @@ class BusinessInfoSerializer(serializers.ModelSerializer):
 
 
 class PaymentSerializer(serializers.ModelSerializer):
-    payment_mode = PaymentModeSerializer(read_only=True)
+    invoice = serializers.PrimaryKeyRelatedField(queryset=Invoice.objects.all())
+    payment_mode = serializers.PrimaryKeyRelatedField(
+        queryset=PaymentMode.objects.all(), allow_null=True, required=False
+    )
+    payment_mode_detail = PaymentModeSerializer(source='payment_mode', read_only=True)
     received_by = UserSerializer(read_only=True)
 
     class Meta:
         model = Payment
-        fields = ('id', 'invoice', 'amount', 'payment_mode', 'reference', 'paid_at', 'received_by')
+        fields = (
+            'id', 'invoice', 'amount', 'payment_mode', 'payment_mode_detail',
+            'reference', 'paid_at', 'received_by'
+        )
 
 
 class InvoiceSerializer(serializers.ModelSerializer):
@@ -54,14 +61,15 @@ class InvoiceSerializer(serializers.ModelSerializer):
     payment_term = serializers.PrimaryKeyRelatedField(queryset=PaymentTerm.objects.all(), allow_null=True, required=False)
     paid_amount = serializers.SerializerMethodField()
     pending_amount = serializers.SerializerMethodField()
+    has_pipeline = serializers.SerializerMethodField()
     sender_business_info_id = serializers.IntegerField(write_only=True, required=False)
 
     class Meta:
         model = Invoice
         fields = (
-            'id', 'invoice_id', 'client', 'date', 'due_date', 'items',
+            'id', 'invoice_id', 'client', 'date', 'start_date', 'due_date', 'items',
             'gst_percentage', 'gst_amount', 'total_amount', 'paid_amount', 'pending_amount',
-            'status', 'payment_mode', 'payment_term', 'authorized_by',
+            'status', 'payment_mode', 'payment_term', 'authorized_by', 'has_pipeline',
             'sender_name', 'sender_logo', 'sender_address', 'sender_phone', 'sender_email',
             'sender_bank_account_name', 'sender_bank_account_number', 'sender_bank_name', 'sender_ifsc',
             'sender_business_info_id',
@@ -83,6 +91,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def get_pending_amount(self, obj):
         return obj.pending_amount
+
+    def get_has_pipeline(self, obj):
+        try:
+            for it in obj.items.select_related('service').all():
+                svc = getattr(it, 'service', None)
+                if svc and getattr(svc, 'is_pipeline', False):
+                    return True
+        except Exception:
+            return False
+        return False
 
     def create(self, validated_data):
         items_data = validated_data.pop('items', [])

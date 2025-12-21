@@ -87,6 +87,10 @@ class Service(BaseModel):
     is_active = models.BooleanField(default=True)
     category = models.ForeignKey(ServiceCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='services')
     hsn = models.CharField(max_length=10, blank=True, null=True)
+    # Pipeline services automatically generate kanban ContentItems when invoiced.
+    # pipeline_config stores a list of objects like: [{"prefix": "post", "count": 8}]
+    is_pipeline = models.BooleanField(default=False)
+    pipeline_config = models.JSONField(default=list, blank=True)
 
     def __str__(self):
         return self.name

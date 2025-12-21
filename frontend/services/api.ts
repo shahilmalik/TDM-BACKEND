@@ -315,6 +315,8 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    getSenderInfo: () =>
+      request<any>("/invoice/senderinfo/", { method: "GET" }),
     preview: (id: number | string) =>
       request<{ id: number; html: string }>(
         `/invoice/invoices/${id}/preview/`,
@@ -329,24 +331,24 @@ export const api = {
     getDropdownPaymentModes: () =>
       request<any[]>("/invoice/dropdowns/payment-modes/", { method: "GET" }),
     createPaymentMode: (data: any) =>
-      request<any>("/invoice/dropdowns/payment-modes/", {
+      request<any>("/invoice/payment-modes/", {
         method: "POST",
         body: JSON.stringify(data),
       }),
     deletePaymentMode: (id: number) =>
-      request<void>(`/invoice/dropdowns/payment-modes/${id}/`, {
+      request<void>(`/invoice/payment-modes/${id}/`, {
         method: "DELETE",
       }),
 
     getDropdownPaymentTerms: () =>
       request<any[]>("/invoice/dropdowns/payment-terms/", { method: "GET" }),
     createPaymentTerm: (data: any) =>
-      request<any>("/invoice/dropdowns/payment-terms/", {
+      request<any>("/invoice/payment-terms/", {
         method: "POST",
         body: JSON.stringify(data),
       }),
     deletePaymentTerm: (id: number) =>
-      request<void>(`/invoice/dropdowns/payment-terms/${id}/`, {
+      request<void>(`/invoice/payment-terms/${id}/`, {
         method: "DELETE",
       }),
   },

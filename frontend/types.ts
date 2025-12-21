@@ -1,14 +1,13 @@
-
 export enum PackageTier {
-  SPARK = 'Spark',
-  RADIANCE = 'Radiance',
-  LUMINARY = 'Luminary'
+  SPARK = "Spark",
+  RADIANCE = "Radiance",
+  LUMINARY = "Luminary",
 }
 
 export interface ServicePackage {
   id: string;
   name: string;
-  price?: number; 
+  price?: number;
   features: string[];
   recommended?: boolean;
 }
@@ -25,14 +24,14 @@ export interface GraphicItem {
   id: string;
   title: string;
   description: string;
-  category: 'stationery' | 'packaging';
+  category: "stationery" | "packaging";
   image?: string;
 }
 
 export interface EcomPlatform {
   id: string;
   name: string;
-  type: 'marketplace' | 'food';
+  type: "marketplace" | "food";
   logo?: string;
   domain?: string;
   description?: string;
@@ -44,7 +43,7 @@ export interface Invoice {
   invoice_id?: string;
   date: string;
   amount: number;
-  status: 'Paid' | 'Pending' | 'Overdue' | 'paid' | 'pending' | 'cancelled';
+  status: "Paid" | "Pending" | "Overdue" | "paid" | "pending" | "cancelled";
   service: string;
   pdfUrl?: string;
 }
@@ -64,22 +63,22 @@ export interface UserSubscription {
   packageName: string;
   startDate: string;
   renewalDate: string;
-  status: 'Active' | 'Cancelled' | 'Expired';
+  status: "Active" | "Cancelled" | "Expired";
 }
 
-export type PipelineStatus = 
-  | 'backlog' 
-  | 'writing' 
-  | 'design' 
-  | 'review' 
-  | 'approval' 
-  | 'scheduled' 
-  | 'posted';
+export type PipelineStatus =
+  | "backlog"
+  | "writing"
+  | "design"
+  | "review"
+  | "approval"
+  | "scheduled"
+  | "posted";
 
 export interface Comment {
   id: string;
   author: string;
-  role: 'client' | 'agency';
+  role: "client" | "agency";
   text: string;
   date: string;
 }
@@ -87,12 +86,12 @@ export interface Comment {
 export interface PipelinePost {
   id: string | number;
   title: string; // Used as Item Title (e.g. poster-08) or descriptive title
-  platform: 'instagram' | 'linkedin' | 'twitter' | 'facebook' | 'all' | string; 
+  platform: "instagram" | "linkedin" | "twitter" | "facebook" | "all" | string;
   status: PipelineStatus;
   dueDate: string;
   thumbnail?: string;
   caption?: string;
-  description?: string; 
+  description?: string;
   comments?: Comment[];
   hashtags?: string[];
   assignees?: string[]; // Array of employee IDs or Names
@@ -118,7 +117,7 @@ export interface ContactPersonDetails {
 }
 
 export interface UserProfile {
-  id?: number; 
+  id?: number;
   business: BusinessDetails;
   contactPerson: ContactPersonDetails;
 }
@@ -158,7 +157,7 @@ export interface AdminEmployee {
   name: string;
   email: string;
   phone: string;
-  role: 'superadmin' | 'manager' | 'content_writer' | 'designer' | 'viewer'; // Updated roles
+  role: "superadmin" | "manager" | "content_writer" | "designer";
 }
 
 export interface AdminInvoiceItem {
@@ -186,7 +185,7 @@ export interface AdminInvoice {
   taxTotal: number;
   grandTotal: number;
   paidAmount: number;
-  status: 'Paid' | 'Partially Paid' | 'Unpaid' | 'Overdue';
+  status: "Paid" | "Partially Paid" | "Unpaid" | "Overdue";
   authorizedBy: string;
   paymentMode?: string;
   paymentTerms?: string;

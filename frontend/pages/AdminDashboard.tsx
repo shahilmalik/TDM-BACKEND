@@ -134,17 +134,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Company Profile State (Using Provided Data)
   const [companyDetails, setCompanyDetails] = useState<AdminCompanyDetails>({
-    name: "TarvizDigimart",
-    address: "12th street, Nungambakkam,\r\nChennai - 234234",
-    phone: "7470067003",
-    email: "info@tarvizdigimart.com",
-    secondaryEmail: "shahilmalikfn@gmail.com",
-    gstin: "SDFLKJHSDOF908",
+    name: "",
+    address: "",
+    phone: "",
+    email: "",
+    secondaryEmail: "",
+    gstin: "",
     bankDetails: {
-      accountName: "accountname",
-      bankName: "indusland",
-      accountNumber: "23432432423",
-      ifsc: "234ljkl",
+      accountName: "",
+      bankName: "",
+      accountNumber: "",
+      ifsc: "",
     },
     paymentModes: [],
     paymentTerms: [],
@@ -249,7 +249,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     lastName: "",
     email: "",
     phone: "",
-    role: "viewer",
+    role: "manager",
   });
   const [editingEmployeeId, setEditingEmployeeId] = useState<
     string | number | null
@@ -336,8 +336,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       fetchPipeline();
     } else if (activeTab === "meta") {
       fetchMeta();
+    } else if (activeTab === "settings") {
+      fetchCompanyProfile();
     }
   }, [activeTab]);
+
+  const fetchCompanyProfile = async () => {
+    try {
+      const data = await api.invoice.getSenderInfo();
+
+      const mapped = {
+        name: data?.name ?? "",
+        address: data?.address ?? "",
+        phone: data?.phone ?? "",
+        email: data?.email ?? "",
+        secondaryEmail: data?.secondary_email ?? "",
+        // BusinessInfo currently doesn't expose GSTIN; keep empty.
+        gstin: "",
+        bankDetails: {
+          accountName: data?.bank_account_name ?? "",
+          bankName: data?.bank_name ?? "",
+          accountNumber: data?.bank_account_number ?? "",
+          ifsc: data?.ifsc ?? "",
+        },
+      };
+
+      setCompanyDetails((prev) => ({
+        ...prev,
+        ...mapped,
+        bankDetails: {
+          ...prev.bankDetails,
+          ...mapped.bankDetails,
+        },
+      }));
+    } catch (e: any) {
+      setAdminMessage({
+        type: "error",
+        text: e?.message || "Failed to load company profile.",
+      });
+    }
+  };
 
   const fetchServicesAndCategories = async () => {
     try {
@@ -368,20 +406,92 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const formatPhoneWithCountry = (countryCode?: string, phone?: string) => {
+    const p = (phone || "").toString().trim();
+    if (!p) return "";
+    if (p.startsWith("+")) return p;
+    const cc = (countryCode || "").toString().trim().replace(/^\+/, "");
+    if (!cc) return p;
+    // avoid double-prefix if phone already starts with the country digits
+    if (p.startsWith(cc)) return `+${p}`;
+    return `+${cc}${p}`;
+  };
+
   const fetchClients = async () => {
     try {
       const data = await api.clients.list();
-      const mapped = data.map((c: any) => ({
+      const mapped = data.map((c: any) => {
+        const u = c.user_detail || {};
+        const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
+          u.last_name || ""
+        }`.trim();
+        const contactPhone = formatPhoneWithCountry(u.country_code, u.phone);
+        const businessPhone = formatPhoneWithCountry(
+          c.business_phone_country_code,
+          c.business_phone
+        );
+
+        return {
+          id: c.id,
+          businessName: c.company_name,
+          contactName,
+          email: u.email || c.business_email,
+          phone: contactPhone || businessPhone,
+          address: c.billing_address,
+          gstin: c.gstin,
+          isActive: !!u.is_active,
+          pendingPayment: 0,
+          businessDetails: {
+            name: c.company_name,
+            address: c.billing_address,
+            gstin: c.gstin,
+            hsn: "",
+            email: c.business_email,
+            phone: businessPhone,
+            whatsappConsent: !!c.whatsapp_updates,
+          },
+          contactDetails: {
+            salutation: u.salutation,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            email: u.email,
+            phone: contactPhone,
+            whatsappConsent: !!c.whatsapp_updates,
+          },
+        };
+      });
+      setClients(mapped);
+    } catch (e) {
+      console.error("Failed to fetch clients", e);
+    }
+  };
+
+  const openClientDetail = async (clientId: string | number) => {
+    try {
+      // show existing basic info immediately if available
+      const existing = clients.find((c) => String(c.id) === String(clientId));
+      if (existing) setSelectedClientDetail(existing);
+
+      const c = await api.clients.get(clientId);
+      const u = c.user_detail || {};
+      const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
+        u.last_name || ""
+      }`.trim();
+      const contactPhone = formatPhoneWithCountry(u.country_code, u.phone);
+      const businessPhone = formatPhoneWithCountry(
+        c.business_phone_country_code,
+        c.business_phone
+      );
+
+      const full: AdminClient = {
         id: c.id,
         businessName: c.company_name,
-        contactName: `${c.contact_person?.salutation || ""} ${
-          c.contact_person?.first_name
-        } ${c.contact_person?.last_name}`.trim(),
-        email: c.contact_person?.email,
-        phone: c.contact_person?.phone,
+        contactName,
+        email: u.email || c.business_email,
+        phone: contactPhone || businessPhone,
         address: c.billing_address,
         gstin: c.gstin,
-        isActive: true,
+        isActive: !!u.is_active,
         pendingPayment: 0,
         businessDetails: {
           name: c.company_name,
@@ -389,21 +499,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           gstin: c.gstin,
           hsn: "",
           email: c.business_email,
-          phone: c.business_phone,
-          whatsappConsent: c.whatsapp_updates,
+          phone: businessPhone,
+          whatsappConsent: !!c.whatsapp_updates,
         },
         contactDetails: {
-          salutation: c.contact_person?.salutation,
-          firstName: c.contact_person?.first_name,
-          lastName: c.contact_person?.last_name,
-          email: c.contact_person?.email,
-          phone: c.contact_person?.phone,
-          whatsappConsent: c.whatsapp_updates,
+          salutation: u.salutation,
+          firstName: u.first_name,
+          lastName: u.last_name,
+          email: u.email,
+          phone: contactPhone,
+          whatsappConsent: !!c.whatsapp_updates,
         },
-      }));
-      setClients(mapped);
-    } catch (e) {
-      console.error("Failed to fetch clients", e);
+        subscriptions: undefined,
+      };
+
+      // keep raw backend around for the detail page (exclude updated_at/archived in UI)
+      (full as any).__backend = { profile: c, user: u };
+      setSelectedClientDetail(full);
+    } catch (e: any) {
+      setAdminMessage({
+        type: "error",
+        text: e?.message || "Failed to load client details.",
+      });
     }
   };
 
@@ -876,7 +993,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       lastName: "",
       email: "",
       phone: "",
-      role: "viewer",
+      role: "manager",
     });
     setIsEmployeeModalOpen(true);
   };
@@ -966,6 +1083,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       client: parseInt(invoiceForm.clientId),
       payment_mode: parseInt(invoiceForm.paymentMode),
       payment_term: parseInt(invoiceForm.paymentTerms),
+      start_date: invoiceForm.date,
       gst_percentage: invoiceForm.gstPercentage,
       items: invoiceForm.items.map((item) => ({
         service: item.servicePk,
@@ -1420,7 +1538,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   .map((c) => (
                     <div
                       key={c.id}
-                      className="p-5 flex items-start justify-between gap-4"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openClientDetail(c.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openClientDetail(c.id);
+                        }
+                      }}
+                      className="p-5 flex items-start justify-between gap-4 cursor-pointer hover:bg-slate-50/70 transition-colors"
                     >
                       <div className="min-w-0">
                         <div className="font-bold text-slate-900 truncate">
@@ -1436,28 +1563,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <span className="inline-flex items-center gap-1">
                             <Phone size={14} /> {c.phone || "—"}
                           </span>
+                          <span className="inline-flex items-center gap-1">
+                            <ShieldCheck size={14} />
+                            {c.isActive ? "Active" : "Inactive"}
+                          </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => setSelectedClientDetail(c)}
-                          className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
-                        >
-                          <Eye size={16} /> View
-                        </button>
-                        <button
-                          onClick={() => openEditClientModal(c)}
-                          className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
-                        >
-                          <Edit2 size={16} /> Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClient(c.id)}
-                          className="px-3 py-2 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1"
-                        >
-                          <Trash2 size={16} /> Delete
-                        </button>
-                      </div>
+                      <ChevronRight className="text-slate-300 flex-shrink-0 mt-1" />
                     </div>
                   ))}
                 {clients.length === 0 && (
@@ -1798,6 +1910,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={invoiceForm.date}
+                      onChange={(e) =>
+                        setInvoiceForm((p) => ({
+                          ...p,
+                          date: e.target.value,
+                        }))
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                    />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
@@ -2358,11 +2486,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end">
-                <button className="bg-[#6C5CE7] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#5a4ad1] shadow-lg shadow-violet-200 flex items-center gap-2">
-                  <Save size={18} /> Update Company Profile
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -2586,52 +2709,189 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* CLIENT DETAILS MODAL */}
       {selectedClientDetail && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden">
+          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col">
             <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <Eye size={20} className="text-[#6C5CE7]" /> Client Details
               </h3>
-              <button
-                onClick={() => setSelectedClientDetail(null)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    openEditClientModal(selectedClientDetail);
+                    setSelectedClientDetail(null);
+                  }}
+                  className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
+                >
+                  <Edit2 size={16} /> Edit
+                </button>
+                <button
+                  onClick={async () => {
+                    const ok = window.confirm("Delete client?");
+                    if (!ok) return;
+                    await handleDeleteClient(selectedClientDetail.id);
+                    setSelectedClientDetail(null);
+                  }}
+                  className="px-3 py-2 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1"
+                >
+                  <Trash2 size={16} /> Delete
+                </button>
+                <button
+                  onClick={() => setSelectedClientDetail(null)}
+                  className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="font-bold text-slate-900 text-lg">
-                {selectedClientDetail.businessName}
+
+            <div className="p-6 space-y-5 overflow-y-auto max-h-[75vh]">
+              <div>
+                <div className="font-bold text-slate-900 text-lg">
+                  {selectedClientDetail.businessName}
+                </div>
+                <div className="mt-1 text-sm text-slate-500 flex items-center gap-2">
+                  <ShieldCheck size={14} />
+                  {selectedClientDetail.isActive ? "Active" : "Inactive"}
+                </div>
               </div>
-              <div className="text-sm text-slate-500">
-                {selectedClientDetail.address || ""}
-              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-                    Contact
-                  </div>
-                  <div className="font-bold text-slate-800">
-                    {selectedClientDetail.contactName}
-                  </div>
-                  <div className="mt-2 text-slate-600 flex items-center gap-2">
-                    <Mail size={14} /> {selectedClientDetail.email || "—"}
-                  </div>
-                  <div className="mt-1 text-slate-600 flex items-center gap-2">
-                    <Phone size={14} /> {selectedClientDetail.phone || "—"}
-                  </div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
                     Business
                   </div>
-                  <div className="mt-1 text-slate-600 flex items-center gap-2">
-                    <MapPin size={14} /> {selectedClientDetail.address || "—"}
+                  <div className="space-y-2 text-slate-700">
+                    <div className="flex items-start gap-2">
+                      <MapPin size={14} className="mt-0.5" />
+                      <span className="whitespace-pre-line">
+                        {selectedClientDetail.businessDetails?.address ||
+                          selectedClientDetail.address ||
+                          "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <FileText size={14} />
+                      <span>GSTIN: {selectedClientDetail.gstin || "—"}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Mail size={14} />
+                      <span>
+                        Business Email:{" "}
+                        {selectedClientDetail.businessDetails?.email || "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone size={14} />
+                      <span>
+                        Business Phone:{" "}
+                        {selectedClientDetail.businessDetails?.phone || "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={14} />
+                      <span>
+                        WhatsApp Updates:{" "}
+                        {selectedClientDetail.businessDetails?.whatsappConsent
+                          ? "Yes"
+                          : "No"}
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-1 text-slate-600 flex items-center gap-2">
-                    <FileText size={14} /> {selectedClientDetail.gstin || "—"}
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                    Responsible Person
+                  </div>
+                  <div className="font-bold text-slate-800">
+                    {selectedClientDetail.contactName || "—"}
+                  </div>
+                  <div className="mt-2 space-y-2 text-slate-700">
+                    <div className="flex items-center gap-2">
+                      <Mail size={14} />
+                      <span>Email: {selectedClientDetail.email || "—"}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone size={14} />
+                      <span>Phone: {selectedClientDetail.phone || "—"}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <UserCircle size={14} />
+                      <span>Role: client</span>
+                    </div>
                   </div>
                 </div>
               </div>
+
+              {/* Everything else from backend (excluding updated_at / archived info) */}
+              {((selectedClientDetail as any).__backend?.profile ||
+                (selectedClientDetail as any).__backend?.user) && (
+                <div className="bg-white border border-slate-100 rounded-2xl p-4">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                    Additional Details
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div className="text-slate-700">
+                      <span className="text-slate-500">Client Code:</span>{" "}
+                      {(selectedClientDetail as any).__backend?.profile
+                        ?.client_code || "—"}
+                    </div>
+                    <div className="text-slate-700">
+                      <span className="text-slate-500">
+                        Business Email (raw):
+                      </span>{" "}
+                      {(selectedClientDetail as any).__backend?.profile
+                        ?.business_email || "—"}
+                    </div>
+                    <div className="text-slate-700">
+                      <span className="text-slate-500">
+                        Business Phone (raw):
+                      </span>{" "}
+                      {formatPhoneWithCountry(
+                        (selectedClientDetail as any).__backend?.profile
+                          ?.business_phone_country_code,
+                        (selectedClientDetail as any).__backend?.profile
+                          ?.business_phone
+                      ) || "—"}
+                    </div>
+                    <div className="text-slate-700">
+                      <span className="text-slate-500">Profile Created:</span>{" "}
+                      {(selectedClientDetail as any).__backend?.profile
+                        ?.created_at
+                        ? new Date(
+                            (
+                              selectedClientDetail as any
+                            ).__backend.profile.created_at
+                          ).toLocaleString()
+                        : "—"}
+                    </div>
+                    <div className="text-slate-700">
+                      <span className="text-slate-500">Contact Created:</span>{" "}
+                      {(selectedClientDetail as any).__backend?.user?.created_at
+                        ? new Date(
+                            (
+                              selectedClientDetail as any
+                            ).__backend.user.created_at
+                          ).toLocaleString()
+                        : "—"}
+                    </div>
+                    <div className="text-slate-700">
+                      <span className="text-slate-500">Pending Email:</span>{" "}
+                      {(selectedClientDetail as any).__backend?.profile
+                        ?.pending_contact_email || "—"}
+                    </div>
+                    <div className="text-slate-700">
+                      <span className="text-slate-500">
+                        Pending Email Verified:
+                      </span>{" "}
+                      {(selectedClientDetail as any).__backend?.profile
+                        ?.pending_contact_email_verified
+                        ? "Yes"
+                        : "No"}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2655,98 +2915,111 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             <div className="p-6 space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Salutation
-                  </label>
-                  <select
-                    value={employeeForm.salutation}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({
-                        ...p,
-                        salutation: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  >
-                    <option value="Mr">Mr</option>
-                    <option value="Mrs">Mrs</option>
-                    <option value="Ms">Ms</option>
-                    <option value="Dr">Dr</option>
-                  </select>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                      Salutation
+                    </label>
+                    <select
+                      value={employeeForm.salutation}
+                      onChange={(e) =>
+                        setEmployeeForm((p) => ({
+                          ...p,
+                          salutation: e.target.value,
+                        }))
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                    >
+                      <option value="Mr">Mr</option>
+                      <option value="Mrs">Mrs</option>
+                      <option value="Ms">Ms</option>
+                      <option value="Dr">Dr</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                      First Name
+                    </label>
+                    <input
+                      value={employeeForm.firstName}
+                      onChange={(e) =>
+                        setEmployeeForm((p) => ({
+                          ...p,
+                          firstName: e.target.value,
+                        }))
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                      Last Name
+                    </label>
+                    <input
+                      value={employeeForm.lastName}
+                      onChange={(e) =>
+                        setEmployeeForm((p) => ({
+                          ...p,
+                          lastName: e.target.value,
+                        }))
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Role
-                  </label>
-                  <select
-                    value={employeeForm.role}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({ ...p, role: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  >
-                    <option value="superadmin">superadmin</option>
-                    <option value="manager">manager</option>
-                    <option value="admin">admin</option>
-                    <option value="content_writer">content_writer</option>
-                    <option value="designer">designer</option>
-                    <option value="viewer">viewer</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    First Name
-                  </label>
-                  <input
-                    value={employeeForm.firstName}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({
-                        ...p,
-                        firstName: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Last Name
-                  </label>
-                  <input
-                    value={employeeForm.lastName}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({
-                        ...p,
-                        lastName: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Email
-                  </label>
-                  <input
-                    value={employeeForm.email}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({ ...p, email: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Phone
-                  </label>
-                  <input
-                    value={employeeForm.phone}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({ ...p, phone: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                      Role
+                    </label>
+                    <select
+                      value={employeeForm.role}
+                      onChange={(e) =>
+                        setEmployeeForm((p) => ({ ...p, role: e.target.value }))
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                    >
+                      <option value="superadmin">superadmin</option>
+                      <option value="manager">manager</option>
+                      <option value="content_writer">content_writer</option>
+                      <option value="designer">designer</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                      Email
+                    </label>
+                    <input
+                      value={employeeForm.email}
+                      onChange={(e) =>
+                        setEmployeeForm((p) => ({
+                          ...p,
+                          email: e.target.value,
+                        }))
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                      Phone
+                    </label>
+                    <input
+                      value={employeeForm.phone}
+                      onChange={(e) =>
+                        setEmployeeForm((p) => ({
+                          ...p,
+                          phone: e.target.value,
+                        }))
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

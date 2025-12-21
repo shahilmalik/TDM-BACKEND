@@ -85,6 +85,8 @@ class Invoice(BaseModel):
 
     # dates
     date = models.DateField(auto_now_add=True)
+    # Start date for services/content delivery associated with this invoice.
+    start_date = models.DateField(blank=True, null=True)
     due_date = models.DateField(blank=True, null=True)
 
     # gst percentage for whole invoice

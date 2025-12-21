@@ -17,6 +17,7 @@ class InvoiceAdmin(admin.ModelAdmin):
         "invoice_id",
         "client",
         "date",
+        "start_date",
         "total_amount",
         "status",
     )

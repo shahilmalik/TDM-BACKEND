@@ -82,16 +82,20 @@ class ServiceAdmin(SimpleHistoryAdmin):
         "name",
         "price",
         "is_active",
+        "is_pipeline",
         "category"
     )
     search_fields = ("name", "service_id", "category__name")
-    list_filter = ("is_active", "category", "created_at")
+    list_filter = ("is_active", "is_pipeline", "category", "created_at")
     fieldsets = (
         ("Service Details", {
             "fields": ("service_id", "name", "category", "description")
         }),
         ("Pricing", {
             "fields": ("price", "hsn")
+        }),
+        ("Pipeline", {
+            "fields": ("is_pipeline", "pipeline_config")
         }),
         ("Status", {
             "fields": ("is_active",)
