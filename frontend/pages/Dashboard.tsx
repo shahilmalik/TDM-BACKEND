@@ -57,6 +57,7 @@ import {
   PipelineStatus,
   UserProfile,
 } from "../types";
+import ContentItem from "../components/ContentItem";
 import {
   api,
   mapBackendColumnToStatus,
@@ -77,6 +78,130 @@ const MOCK_META_MEDIA = {
 };
 const INSTAGRAM_MOCK_DATA = { profile: {}, media: [] };
 const MOCK_POST_DETAIL = (baseItem: any) => ({ success: true, post: baseItem });
+
+const MOCK_PIPELINE_POSTS: PipelinePost[] = [
+  {
+    id: "mock-backlog",
+    title: "idea-01 | New Year Campaign Theme",
+    platform: "all",
+    platforms: ["instagram", "facebook", "linkedin", "twitter"],
+    status: "backlog",
+    dueDate: "2025-12-24",
+    priority: "medium",
+    description:
+      "Brainstorm 3 creative directions + hooks for New Year campaign posts.",
+    location: "Dubai, UAE",
+    hashtags: ["#NewYear", "#Campaign"],
+    client: { first_name: "Demo", last_name: "Client" },
+    assigned_to: { first_name: "Ayesha", last_name: "Strategist" },
+  },
+  {
+    id: "mock-writing",
+    title: "poster-08 | Winter Sale Announcement",
+    platform: "instagram",
+    platforms: ["instagram", "facebook"],
+    status: "writing",
+    dueDate: "2025-12-26",
+    priority: "high",
+    description:
+      "Create a winter sale post highlighting 30% off. Keep copy short and bold.",
+    caption:
+      "Winter Sale is live! Get up to 30% off on selected services. Limited time only.",
+    hashtags: ["#WinterSale", "#LimitedTime", "#BrandName"],
+    location: "Karachi, PK",
+    client: { first_name: "Demo", last_name: "Client" },
+    assigned_to: { first_name: "John", last_name: "Writer" },
+  },
+  {
+    id: "mock-design",
+    title: "carousel-02 | Before/After Results",
+    platform: "linkedin",
+    platforms: ["linkedin"],
+    status: "design",
+    dueDate: "2025-12-27",
+    priority: "medium",
+    description:
+      "Design a 4-slide carousel showing before/after impact and a short CTA.",
+    location: "Lahore, PK",
+    hashtags: ["#CaseStudy", "#Growth", "#Marketing"],
+    client: { first_name: "Demo", last_name: "Client" },
+    assigned_to: { first_name: "Sara", last_name: "Dev" },
+  },
+  {
+    id: "mock-review",
+    title: "review-01 | Copy & CTA Final Check",
+    platform: "facebook",
+    platforms: ["facebook"],
+    status: "review",
+    dueDate: "2025-12-28",
+    priority: "low",
+    description:
+      "Internal review: tone, grammar, CTA strength, and brand consistency.",
+    location: "Islamabad, PK",
+    hashtags: ["#BrandVoice"],
+    client: { first_name: "Demo", last_name: "Client" },
+    assigned_to: { first_name: "Bilal", last_name: "Editor" },
+  },
+  {
+    id: "mock-approval",
+    title: "reel-01 | Behind the scenes",
+    platform: "instagram",
+    platforms: ["instagram"],
+    status: "approval",
+    dueDate: "2025-12-29",
+    priority: "low",
+    description:
+      "Client approval needed for the final caption and CTA.",
+    location: "Abu Dhabi, UAE",
+    client: { first_name: "Demo", last_name: "Client" },
+    assigned_to: { first_name: "Sara", last_name: "Dev" },
+  },
+  {
+    id: "mock-finalized",
+    title: "final-01 | Export + Upload Assets",
+    platform: "instagram",
+    platforms: ["instagram"],
+    status: "finalized",
+    dueDate: "2025-12-30",
+    priority: "medium",
+    description:
+      "Finalize exports (1080x1350, 1080x1920) and attach captions.",
+    location: "Sharjah, UAE",
+    hashtags: ["#ReadyToPost"],
+    client: { first_name: "Demo", last_name: "Client" },
+    assigned_to: { first_name: "Hira", last_name: "Designer" },
+  },
+  {
+    id: "mock-scheduled",
+    title: "schedule-01 | Queue in Meta Business Suite",
+    platform: "facebook",
+    platforms: ["facebook", "instagram"],
+    status: "scheduled",
+    dueDate: "2025-12-31",
+    priority: "low",
+    description:
+      "Schedule for 6:30 PM local time. Verify link tracking.",
+    location: "Doha, QA",
+    hashtags: ["#Scheduled"],
+    client: { first_name: "Demo", last_name: "Client" },
+    assigned_to: { first_name: "Nida", last_name: "Manager" },
+  },
+  {
+    id: "mock-posted",
+    title: "posted-01 | Engagement Monitoring",
+    platform: "twitter",
+    platforms: ["twitter"],
+    status: "posted",
+    dueDate: "2026-01-01",
+    priority: "low",
+    description:
+      "Monitor comments for 24h and respond to FAQs.",
+    location: "Riyadh, SA",
+    hashtags: ["#Community"],
+    client: { first_name: "Demo", last_name: "Client" },
+    assigned_to: { first_name: "Umar", last_name: "Support" },
+  },
+];
 
 // Minimal mock profile used for demo mode fallback
 const MOCK_PROFILE_CLIENT = {
@@ -122,7 +247,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [pipelinePosts, setPipelinePosts] = useState<PipelinePost[]>([]);
+  const [pipelinePosts, setPipelinePosts] = useState<PipelinePost[]>(
+    MOCK_PIPELINE_POSTS
+  );
 
   // UI State
   const [draggedPostId, setDraggedPostId] = useState<string | number | null>(
@@ -263,6 +390,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
         if (demoMode) {
           await new Promise((resolve) => setTimeout(resolve, 800));
           setUserProfile(MOCK_PROFILE_CLIENT);
+          setPipelinePosts(MOCK_PIPELINE_POSTS);
         } else {
           let backendProfile: any = null;
           if (storedClientId) {
@@ -360,17 +488,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
           }
 
           const kanbanItems = await api.kanban.list();
-          setPipelinePosts(
-            kanbanItems.map((item: any) => ({
-              id: item.id,
-              title: item.title,
-              platform: item.platforms?.[0] || "instagram",
-              status: mapBackendColumnToStatus(item.column),
-              dueDate: item.due_date,
-              description: item.description,
-              thumbnail: item.thumbnail,
-            }))
-          );
+          const mapped = (kanbanItems || []).map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            platform: item.platforms?.[0] || "instagram",
+            platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
+            priority: item.priority || undefined,
+            status: mapBackendColumnToStatus(item.column),
+            dueDate: item.due_date,
+            description: item.description,
+            thumbnail: item.thumbnail,
+          }));
+
+          setPipelinePosts(mapped.length ? mapped : MOCK_PIPELINE_POSTS);
         }
       } catch (error) {
         console.error("Dashboard Load Error", error);
@@ -633,11 +763,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
     setDraggedPostId(null);
   };
 
-  const handleApprovePost = async (
-    e: React.MouseEvent,
-    postId: string | number
-  ) => {
-    e.stopPropagation();
+  const handleApprovePostById = async (postId: string | number) => {
     setPipelinePosts((prev) =>
       prev.map((post) =>
         post.id === postId ? { ...post, status: "scheduled" } : post
@@ -656,11 +782,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
     }
   };
 
-  const handleRequestChanges = async (
+  const handleApprovePost = async (
     e: React.MouseEvent,
     postId: string | number
   ) => {
     e.stopPropagation();
+    await handleApprovePostById(postId);
+  };
+
+  const handleRequestChangesById = async (postId: string | number) => {
     const reason = prompt("Feedback for the team:");
     if (reason) {
       setPipelinePosts((prev) =>
@@ -680,6 +810,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
         }
       }
     }
+  };
+
+  const handleRequestChanges = async (
+    e: React.MouseEvent,
+    postId: string | number
+  ) => {
+    e.stopPropagation();
+    await handleRequestChangesById(postId);
   };
 
   const handleProfileChange = (
@@ -1231,7 +1369,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                   return (
                     <div
                       key={column.id}
-                      className={`flex flex-col w-72 h-full rounded-2xl ${
+                      className={`flex flex-col w-72 shrink-0 h-full rounded-2xl ${
                         isClientApproval ? "bg-orange-50/50" : "bg-white"
                       } border-t-4 ${
                         column.color
@@ -1270,62 +1408,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                           </div>
                         )}
                         {posts.map((post) => (
-                          <div
+                          <ContentItem
                             key={post.id}
-                            draggable={post.status === "approval"}
-                            onDragStart={(e) => handleDragStart(e, post.id)}
-                            onClick={() => setSelectedPost(post)}
-                            className={`bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition-shadow group relative ${
-                              post.status === "approval"
-                                ? "cursor-grab active:cursor-grabbing"
-                                : "cursor-pointer"
-                            }`}
-                          >
-                            <div className="flex justify-between items-start mb-2">
-                              <div className="p-1.5 bg-slate-50 rounded-lg">
-                                {getPlatformIcon(post.platform)}
-                              </div>
-                              {post.status === "scheduled" && (
-                                <CheckCircle2
-                                  size={16}
-                                  className="text-emerald-500"
-                                />
-                              )}
-                            </div>
-                            <h4 className="font-bold text-slate-800 text-sm mb-3 leading-snug">
-                              {post.title}
-                            </h4>
-                            {post.thumbnail && (
-                              <div className="w-full h-24 mb-3 rounded-lg overflow-hidden bg-slate-100">
-                                <img
-                                  src={post.thumbnail}
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                            )}
-                            <div className="flex items-center gap-2 text-xs text-slate-500">
-                              <Calendar size={12} />
-                              <span>{post.dueDate}</span>
-                            </div>
-                            {isClientApproval && (
-                              <div className="flex gap-2 mt-3 pt-3 border-t">
-                                <button
-                                  onClick={(e) =>
-                                    handleRequestChanges(e, post.id)
-                                  }
-                                  className="flex-1 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 rounded-lg flex items-center justify-center gap-1"
-                                >
-                                  <RotateCcw size={12} /> Revise
-                                </button>
-                                <button
-                                  onClick={(e) => handleApprovePost(e, post.id)}
-                                  className="flex-1 py-1.5 text-xs font-bold text-white bg-orange-500 rounded-lg flex items-center justify-center gap-1"
-                                >
-                                  <Check size={12} /> Approve
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                            post={post}
+                            isAdmin={false}
+                            onDragStart={handleDragStart}
+                            onApprove={handleApprovePostById}
+                            onRevise={handleRequestChangesById}
+                          />
                         ))}
                       </div>
                     </div>

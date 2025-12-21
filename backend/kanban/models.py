@@ -37,7 +37,6 @@ PRIORITY_LEVEL = [
     ("low", "Low"),
     ("medium", "Medium"),
     ("high", "High"),
-    ("urgent", "Urgent"),
 ]
 
 APPROVAL_STATUS = [

@@ -82,20 +82,45 @@ export interface Comment {
   role: "client" | "agency";
   text: string;
   date: string;
+  replies?: Comment[];
+}
+
+export interface HistoryEntry {
+  id: string;
+  user: string;
+  action: string;
+  timestamp: string;
 }
 
 export interface PipelinePost {
   id: string | number;
   title: string; // Used as Item Title (e.g. poster-08) or descriptive title
   platform: "instagram" | "linkedin" | "twitter" | "facebook" | "all" | string;
+  platforms?: string[];
   status: PipelineStatus;
   dueDate: string;
   thumbnail?: string;
   caption?: string;
   description?: string;
   comments?: Comment[];
+  discussions?: Comment[];
   hashtags?: string[];
   assignees?: string[]; // Array of employee IDs or Names
+
+  // Optional richer fields used by ContentItem design (safe to omit)
+  priority?: "high" | "medium" | "low" | string;
+  assigned_to?: {
+    first_name: string;
+    last_name?: string;
+  } | null;
+  client?: {
+    first_name: string;
+    last_name?: string;
+  } | null;
+  media_assets?: Array<{ file: string }>;
+  history?: HistoryEntry[];
+
+  location?: string;
 }
 
 export interface BusinessDetails {
