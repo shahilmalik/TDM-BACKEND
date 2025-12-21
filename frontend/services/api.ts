@@ -217,7 +217,18 @@ export const api = {
       }),
   },
   employee: {
-    list: () => request<any[]>("/employee/", { method: "GET" }),
+    list: (params?: { page?: number; page_size?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          if (value === undefined || value === null) continue;
+          searchParams.set(key, String(value));
+        }
+      }
+      const qs = searchParams.toString();
+      const url = qs ? `/employee/?${qs}` : "/employee/";
+      return request<any>(url, { method: "GET" });
+    },
     create: (data: any) =>
       request<any>("/employee/", {
         method: "POST",
@@ -232,7 +243,23 @@ export const api = {
       request<void>(`/employee/${id}/`, { method: "DELETE" }),
   },
   clients: {
-    list: () => request<any[]>("/clients/", { method: "GET" }),
+    list: (params?: {
+      page?: number;
+      page_size?: number;
+      search?: string;
+      status?: "all" | "active" | "inactive";
+    }) => {
+      const searchParams = new URLSearchParams();
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          if (value === undefined || value === null || value === "") continue;
+          searchParams.set(key, String(value));
+        }
+      }
+      const qs = searchParams.toString();
+      const url = qs ? `/clients/?${qs}` : "/clients/";
+      return request<any>(url, { method: "GET" });
+    },
     create: (data: any) =>
       request<any>("/clients/", { method: "POST", body: JSON.stringify(data) }),
     get: (id: string | number) =>
@@ -279,7 +306,18 @@ export const api = {
       }),
   },
   services: {
-    list: () => request<BackendService[]>("/services/", { method: "GET" }),
+    list: (params?: { page?: number; page_size?: number; category?: string }) => {
+      const searchParams = new URLSearchParams();
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          if (value === undefined || value === null || value === "") continue;
+          searchParams.set(key, String(value));
+        }
+      }
+      const qs = searchParams.toString();
+      const url = qs ? `/services/?${qs}` : "/services/";
+      return request<any>(url, { method: "GET" });
+    },
     create: (data: any) =>
       request<BackendService>("/services/", {
         method: "POST",
@@ -309,7 +347,18 @@ export const api = {
       request<void>(`/categories/${id}/`, { method: "DELETE" }),
   },
   invoice: {
-    list: () => request<any>("/invoice/invoices/", { method: "GET" }),
+    list: (params?: Record<string, string | number | undefined | null>) => {
+      const searchParams = new URLSearchParams();
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          if (value === undefined || value === null || value === "") continue;
+          searchParams.set(key, String(value));
+        }
+      }
+      const qs = searchParams.toString();
+      const url = qs ? `/invoice/invoices/?${qs}` : "/invoice/invoices/";
+      return request<any>(url, { method: "GET" });
+    },
     create: (data: any) =>
       request<any>("/invoice/invoices/", {
         method: "POST",
@@ -344,6 +393,8 @@ export const api = {
     // Dropdowns
     getDropdownClients: () =>
       request<any[]>("/invoice/dropdowns/clients/", { method: "GET" }),
+    getDropdownInvoiceStatuses: () =>
+      request<any[]>("/invoice/dropdowns/invoice-statuses/", { method: "GET" }),
     getDropdownPaymentModes: () =>
       request<any[]>("/invoice/dropdowns/payment-modes/", { method: "GET" }),
     createPaymentMode: (data: any) =>

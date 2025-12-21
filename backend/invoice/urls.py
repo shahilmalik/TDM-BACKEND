@@ -7,6 +7,7 @@ from .views import (
     SenderInfoView,
     PaymentViewSet,
     ClientsDropdownView,
+    InvoiceStatusesDropdownView,
     PaymentModesDropdownView,
     PaymentTermsDropdownView,
 )
@@ -21,6 +22,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('senderinfo/', SenderInfoView.as_view(), name='senderinfo'),
     path('dropdowns/clients/', ClientsDropdownView.as_view(), name='dropdown-clients'),
+    path('dropdowns/invoice-statuses/', InvoiceStatusesDropdownView.as_view(), name='dropdown-invoice-statuses'),
     path('dropdowns/payment-modes/', PaymentModesDropdownView.as_view(), name='dropdown-payment-modes'),
     path('dropdowns/payment-terms/', PaymentTermsDropdownView.as_view(), name='dropdown-payment-terms'),
 ]

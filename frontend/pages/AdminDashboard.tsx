@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Briefcase,
   Building,
@@ -129,6 +129,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [services, setServices] = useState<BackendService[]>([]);
   const [categories, setCategories] = useState<BackendCategory[]>([]);
 
+  // Services list (paginated for Services tab)
+  const [servicesList, setServicesList] = useState<BackendService[]>([]);
+  const [servicesListPage, setServicesListPage] = useState(1);
+  const [servicesListHasNext, setServicesListHasNext] = useState(false);
+  const [servicesListLoading, setServicesListLoading] = useState(false);
+  const servicesListSentinelRef = useRef<HTMLDivElement | null>(null);
+
   // Category UI State
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -154,9 +161,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Employees
   const [employees, setEmployees] = useState<AdminEmployee[]>([]);
+  const [employeesPage, setEmployeesPage] = useState(1);
+  const [employeesHasNext, setEmployeesHasNext] = useState(false);
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const employeesSentinelRef = useRef<HTMLDivElement | null>(null);
 
   // Invoices
   const [invoices, setInvoices] = useState<AdminInvoice[]>([]);
+  const [invoicesPage, setInvoicesPage] = useState(1);
+  const [invoicesHasNext, setInvoicesHasNext] = useState(false);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const invoicesSentinelRef = useRef<HTMLDivElement | null>(null);
   const [invoiceDropdowns, setInvoiceDropdowns] = useState({
     clients: [] as { id: number; name: string }[],
     paymentModes: [] as { id: number; name: string }[],
@@ -191,6 +206,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Clients
   const [clients, setClients] = useState<AdminClient[]>([]);
+  // Clients list (paginated for Clients tab; keep `clients` for Pipeline tab)
+  const [clientsList, setClientsList] = useState<AdminClient[]>([]);
+  const [clientsListPage, setClientsListPage] = useState(1);
+  const [clientsListHasNext, setClientsListHasNext] = useState(false);
+  const [clientsListLoading, setClientsListLoading] = useState(false);
+  const clientsListSentinelRef = useRef<HTMLDivElement | null>(null);
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<
     "all" | "active" | "inactive"
@@ -270,6 +291,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     end: "",
   });
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [invoiceStatusOptions, setInvoiceStatusOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [invoiceClientOptions, setInvoiceClientOptions] = useState<
+    { id: number; name: string }[]
+  >([]);
 
   // Payment Modal
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -359,12 +386,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   useEffect(() => {
     if (activeTab === "services") {
       fetchServicesAndCategories();
+      resetServicesList();
     } else if (activeTab === "employees") {
       fetchEmployees();
     } else if (activeTab === "clients") {
-      fetchClients();
+      resetClientsList();
     } else if (activeTab === "invoices") {
-      fetchInvoices();
+      resetInvoicesList();
       fetchInvoiceDropdowns();
       fetchServicesAndCategories();
     } else if (activeTab === "pipeline") {
@@ -376,6 +404,137 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       fetchCompanyProfile();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "invoices" || invoiceView !== "list") return;
+    fetchInvoiceFilterOptions();
+    resetInvoicesList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, invoiceView]);
+
+  useEffect(() => {
+    if (activeTab !== "invoices" || invoiceView !== "list") return;
+    resetInvoicesList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceStatusFilter, invoiceClientFilter, invoiceDateRange.start, invoiceDateRange.end]);
+
+  useEffect(() => {
+    if (activeTab !== "invoices" || invoiceView !== "list") return;
+    const t = window.setTimeout(() => {
+      resetInvoicesList();
+    }, 300);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceSearch]);
+
+  useEffect(() => {
+    if (activeTab !== "clients") return;
+    const t = window.setTimeout(() => {
+      resetClientsList();
+    }, 300);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientSearch]);
+
+  useEffect(() => {
+    if (activeTab !== "clients") return;
+    resetClientsList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientFilter]);
+
+  useEffect(() => {
+    if (activeTab !== "services") return;
+    resetServicesList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryFilter]);
+
+  useEffect(() => {
+    if (activeTab !== "invoices" || invoiceView !== "list") return;
+    const el = invoicesSentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        fetchMoreInvoices();
+      },
+      { root: null, rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeTab,
+    invoiceView,
+    invoicesHasNext,
+    invoicesLoading,
+    invoicesPage,
+    invoiceSearch,
+    invoiceStatusFilter,
+    invoiceClientFilter,
+    invoiceDateRange.start,
+    invoiceDateRange.end,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== "employees") return;
+    const el = employeesSentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        fetchMoreEmployees();
+      },
+      { root: null, rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, employeesHasNext, employeesLoading, employeesPage]);
+
+  useEffect(() => {
+    if (activeTab !== "clients") return;
+    const el = clientsListSentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        fetchMoreClientsList();
+      },
+      { root: null, rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeTab,
+    clientsListHasNext,
+    clientsListLoading,
+    clientsListPage,
+    clientSearch,
+    clientFilter,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== "services") return;
+    const el = servicesListSentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting) return;
+        fetchMoreServicesList();
+      },
+      { root: null, rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeTab,
+    servicesListHasNext,
+    servicesListLoading,
+    servicesListPage,
+    categoryFilter,
+  ]);
 
   const fetchCompanyProfile = async () => {
     try {
@@ -415,10 +574,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchServicesAndCategories = async () => {
     try {
-      const [fetchedServices, fetchedCategories] = await Promise.all([
-        api.services.list(),
+      const [servicesRes, fetchedCategories] = await Promise.all([
+        api.services.list({ page: 1, page_size: 1000 }),
         api.categories.list(),
       ]);
+
+      const fetchedServices = Array.isArray(servicesRes)
+        ? servicesRes
+        : servicesRes?.results || [];
+
       setServices(fetchedServices);
       setCategories(fetchedCategories);
     } catch (error) {
@@ -426,9 +590,52 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const fetchEmployees = async () => {
+  const resetServicesList = async () => {
+    setServicesListLoading(true);
     try {
-      const data = await api.employee.list();
+      const res: any = await api.services.list({
+        page: 1,
+        page_size: 20,
+        category: categoryFilter,
+      });
+
+      const items = Array.isArray(res) ? res : res?.results || [];
+      setServicesList(items);
+      setServicesListPage(1);
+      setServicesListHasNext(!!res?.next);
+    } catch (e) {
+      console.error("Failed to fetch services list", e);
+    } finally {
+      setServicesListLoading(false);
+    }
+  };
+
+  const fetchMoreServicesList = async () => {
+    if (servicesListLoading || !servicesListHasNext) return;
+    const nextPage = servicesListPage + 1;
+    setServicesListLoading(true);
+    try {
+      const res: any = await api.services.list({
+        page: nextPage,
+        page_size: 20,
+        category: categoryFilter,
+      });
+      const items = Array.isArray(res) ? res : res?.results || [];
+      setServicesList((prev) => [...prev, ...items]);
+      setServicesListPage(nextPage);
+      setServicesListHasNext(!!res?.next);
+    } catch (e) {
+      console.error("Failed to fetch more services", e);
+    } finally {
+      setServicesListLoading(false);
+    }
+  };
+
+  const fetchEmployees = async () => {
+    setEmployeesLoading(true);
+    try {
+      const res: any = await api.employee.list({ page: 1, page_size: 20 });
+      const data = Array.isArray(res) ? res : res?.results || [];
       const mapped = data.map((e: any) => ({
         id: e.id,
         name: `${e.salutation} ${e.first_name} ${e.last_name}`.trim(),
@@ -437,8 +644,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         role: e.type,
       }));
       setEmployees(mapped);
+      setEmployeesPage(1);
+      setEmployeesHasNext(!!res?.next);
     } catch (e) {
       console.error("Failed to fetch employees", e);
+    } finally {
+      setEmployeesLoading(false);
+    }
+  };
+
+  const fetchMoreEmployees = async () => {
+    if (employeesLoading || !employeesHasNext) return;
+    const nextPage = employeesPage + 1;
+    setEmployeesLoading(true);
+    try {
+      const res: any = await api.employee.list({ page: nextPage, page_size: 20 });
+      const data = Array.isArray(res) ? res : res?.results || [];
+      const mapped = data.map((e: any) => ({
+        id: e.id,
+        name: `${e.salutation} ${e.first_name} ${e.last_name}`.trim(),
+        email: e.email,
+        phone: e.phone,
+        role: e.type,
+      }));
+      setEmployees((prev) => [...prev, ...mapped]);
+      setEmployeesPage(nextPage);
+      setEmployeesHasNext(!!res?.next);
+    } catch (e) {
+      console.error("Failed to fetch more employees", e);
+    } finally {
+      setEmployeesLoading(false);
     }
   };
 
@@ -455,7 +690,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchClients = async () => {
     try {
-      const data = await api.clients.list();
+      // Full client list for Pipeline tab (and any non-paginated needs)
+      const res: any = await api.clients.list({ page: 1, page_size: 1000 });
+      const data = Array.isArray(res) ? res : res?.results || [];
       const mapped = data.map((c: any) => {
         const u = c.user_detail || {};
         const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
@@ -499,6 +736,132 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setClients(mapped);
     } catch (e) {
       console.error("Failed to fetch clients", e);
+    }
+  };
+
+  const resetClientsList = async () => {
+    setClientsListLoading(true);
+    try {
+      const res: any = await api.clients.list({
+        page: 1,
+        page_size: 20,
+        search: clientSearch || undefined,
+        status: clientFilter,
+      });
+      const data = Array.isArray(res) ? res : res?.results || [];
+
+      const mapped = data.map((c: any) => {
+        const u = c.user_detail || {};
+        const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
+          u.last_name || ""
+        }`.trim();
+        const contactPhone = formatPhoneWithCountry(u.country_code, u.phone);
+        const businessPhone = formatPhoneWithCountry(
+          c.business_phone_country_code,
+          c.business_phone
+        );
+
+        return {
+          id: c.id,
+          businessName: c.company_name,
+          contactName,
+          email: u.email || c.business_email,
+          phone: contactPhone || businessPhone,
+          address: c.billing_address,
+          gstin: c.gstin,
+          isActive: !!u.is_active,
+          pendingPayment: 0,
+          businessDetails: {
+            name: c.company_name,
+            address: c.billing_address,
+            gstin: c.gstin,
+            hsn: "",
+            email: c.business_email,
+            phone: businessPhone,
+            whatsappConsent: !!c.whatsapp_updates,
+          },
+          contactDetails: {
+            salutation: u.salutation,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            email: u.email,
+            phone: contactPhone,
+            whatsappConsent: !!c.whatsapp_updates,
+          },
+        };
+      });
+
+      setClientsList(mapped);
+      setClientsListPage(1);
+      setClientsListHasNext(!!res?.next);
+    } catch (e) {
+      console.error("Failed to fetch clients list", e);
+    } finally {
+      setClientsListLoading(false);
+    }
+  };
+
+  const fetchMoreClientsList = async () => {
+    if (clientsListLoading || !clientsListHasNext) return;
+    const nextPage = clientsListPage + 1;
+    setClientsListLoading(true);
+    try {
+      const res: any = await api.clients.list({
+        page: nextPage,
+        page_size: 20,
+        search: clientSearch || undefined,
+        status: clientFilter,
+      });
+      const data = Array.isArray(res) ? res : res?.results || [];
+
+      const mapped = data.map((c: any) => {
+        const u = c.user_detail || {};
+        const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
+          u.last_name || ""
+        }`.trim();
+        const contactPhone = formatPhoneWithCountry(u.country_code, u.phone);
+        const businessPhone = formatPhoneWithCountry(
+          c.business_phone_country_code,
+          c.business_phone
+        );
+
+        return {
+          id: c.id,
+          businessName: c.company_name,
+          contactName,
+          email: u.email || c.business_email,
+          phone: contactPhone || businessPhone,
+          address: c.billing_address,
+          gstin: c.gstin,
+          isActive: !!u.is_active,
+          pendingPayment: 0,
+          businessDetails: {
+            name: c.company_name,
+            address: c.billing_address,
+            gstin: c.gstin,
+            hsn: "",
+            email: c.business_email,
+            phone: businessPhone,
+            whatsappConsent: !!c.whatsapp_updates,
+          },
+          contactDetails: {
+            salutation: u.salutation,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            email: u.email,
+            phone: contactPhone,
+            whatsappConsent: !!c.whatsapp_updates,
+          },
+        };
+      });
+
+      setClientsList((prev) => [...prev, ...mapped]);
+      setClientsListPage(nextPage);
+      setClientsListHasNext(!!res?.next);
+    } catch (e) {
+      console.error("Failed to fetch more clients", e);
+    } finally {
+      setClientsListLoading(false);
     }
   };
 
@@ -546,7 +909,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
 
       // show existing basic info immediately if available
-      const existing = clients.find((c) => String(c.id) === String(clientId));
+      const existing =
+        clientsList.find((c) => String(c.id) === String(clientId)) ||
+        clients.find((c) => String(c.id) === String(clientId));
       if (existing) setSelectedClientDetail(existing);
 
       const c = await api.clients.get(clientId);
@@ -628,10 +993,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const fetchInvoices = async () => {
+  const resetInvoicesList = async () => {
+    setInvoicesLoading(true);
     try {
-      const response: any = await api.invoice.list();
-      const invoiceList = response.invoices || [];
+      const response: any = await api.invoice.list({
+        page: 1,
+        page_size: 20,
+        search: invoiceSearch || undefined,
+        status:
+          invoiceStatusFilter && invoiceStatusFilter !== "All"
+            ? invoiceStatusFilter
+            : undefined,
+        client_id:
+          invoiceClientFilter && invoiceClientFilter !== "All"
+            ? invoiceClientFilter
+            : undefined,
+        start_date: invoiceDateRange.start || undefined,
+        end_date: invoiceDateRange.end || undefined,
+      });
+      const invoiceList = response?.results || response?.invoices || [];
 
       const mapped = invoiceList.map((inv: any) => {
         let total = inv.total_amount ? parseFloat(inv.total_amount) : 0;
@@ -660,16 +1040,99 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           taxTotal: parseFloat(inv.gst_amount || "0"),
           grandTotal: total,
           paidAmount: parseFloat(inv.paid_amount || "0"),
-          status: inv.status
-            ? inv.status.charAt(0).toUpperCase() + inv.status.slice(1)
-            : "Unknown",
+          status: inv.status_label || inv.status || "Unknown",
+          statusValue: inv.status || "",
           authorizedBy: inv.authorized_by || "System",
           hasPipeline: !!inv.has_pipeline,
         };
       });
       setInvoices(mapped);
+      setInvoicesPage(1);
+      setInvoicesHasNext(!!response?.next);
+      setSelectedInvoiceIds([]);
     } catch (e) {
       console.error("Failed to fetch invoices", e);
+    } finally {
+      setInvoicesLoading(false);
+    }
+  };
+
+  const fetchMoreInvoices = async () => {
+    if (invoicesLoading || !invoicesHasNext) return;
+    const nextPage = invoicesPage + 1;
+    setInvoicesLoading(true);
+    try {
+      const response: any = await api.invoice.list({
+        page: nextPage,
+        page_size: 20,
+        search: invoiceSearch || undefined,
+        status:
+          invoiceStatusFilter && invoiceStatusFilter !== "All"
+            ? invoiceStatusFilter
+            : undefined,
+        client_id:
+          invoiceClientFilter && invoiceClientFilter !== "All"
+            ? invoiceClientFilter
+            : undefined,
+        start_date: invoiceDateRange.start || undefined,
+        end_date: invoiceDateRange.end || undefined,
+      });
+      const invoiceList = response?.results || response?.invoices || [];
+
+      const mapped = invoiceList.map((inv: any) => {
+        let total = inv.total_amount ? parseFloat(inv.total_amount) : 0;
+        if ((!total || total === 0) && inv.items && inv.items.length > 0) {
+          total = inv.items.reduce(
+            (sum: number, item: any) => sum + parseFloat(item.line_total || 0),
+            0
+          );
+        }
+
+        return {
+          id: inv.id,
+          invoiceNumber: inv.invoice_id,
+          date: inv.date,
+          startDate: inv.start_date ?? null,
+          dueDate: inv.due_date || inv.date,
+          clientId: inv.client?.id || "",
+          clientName: inv.client
+            ? `${inv.client.first_name || ""} ${
+                inv.client.last_name || ""
+              }`.trim()
+            : "Unknown",
+          clientAddress: "",
+          items: inv.items || [],
+          subTotal: total,
+          taxTotal: parseFloat(inv.gst_amount || "0"),
+          grandTotal: total,
+          paidAmount: parseFloat(inv.paid_amount || "0"),
+          status: inv.status_label || inv.status || "Unknown",
+          statusValue: inv.status || "",
+          authorizedBy: inv.authorized_by || "System",
+          hasPipeline: !!inv.has_pipeline,
+        };
+      });
+
+      setInvoices((prev) => [...prev, ...mapped]);
+      setInvoicesPage(nextPage);
+      setInvoicesHasNext(!!response?.next);
+    } catch (e) {
+      console.error("Failed to fetch more invoices", e);
+    } finally {
+      setInvoicesLoading(false);
+    }
+  };
+
+  const fetchInvoiceFilterOptions = async () => {
+    try {
+      const [clientsRes, statusesRes] = await Promise.all([
+        api.invoice.getDropdownClients(),
+        api.invoice.getDropdownInvoiceStatuses(),
+      ]);
+      setInvoiceClientOptions(Array.isArray(clientsRes) ? clientsRes : []);
+      setInvoiceStatusOptions(Array.isArray(statusesRes) ? statusesRes : []);
+    } catch (e) {
+      console.error("Failed to fetch invoice filter options", e);
     }
   };
 
@@ -703,7 +1166,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       setIsPaymentModalOpen(false);
       setSelectedInvoice(null);
-      fetchInvoices();
+      resetInvoicesList();
       setAdminMessage({ type: "success", text: "Payment recorded." });
     } catch (e: any) {
       setAdminMessage({ type: "error", text: e?.message || "Failed." });
@@ -812,6 +1275,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         .replace(/[^\w-]+/g, "");
       await api.categories.create({ name: newCategoryName, slug });
       fetchServicesAndCategories();
+      resetServicesList();
       setNewCategoryName("");
     } catch (error: any) {
       setAdminMessage({ type: "error", text: error?.message || "Failed." });
@@ -823,6 +1287,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       await api.categories.delete(id);
       setCategories((prev) => prev.filter((c) => c.id !== id));
+      fetchServicesAndCategories();
+      resetServicesList();
     } catch (error: any) {
       setAdminMessage({ type: "error", text: error?.message || "Failed." });
     }
@@ -846,6 +1312,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         await api.services.update(editingServiceId, payload);
       else await api.services.create(payload);
       fetchServicesAndCategories();
+      resetServicesList();
       setIsServiceModalOpen(false);
       setNewService({
         service_id: "",
@@ -886,6 +1353,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       try {
         await api.services.delete(id);
         fetchServicesAndCategories();
+        resetServicesList();
       } catch (error: any) {
         setAdminMessage({ type: "error", text: error?.message || "Failed." });
       }
@@ -1094,6 +1562,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       setIsClientModalOpen(false);
       fetchClients();
+      resetClientsList();
       setAdminMessage({ type: "success", text: "Client saved." });
     } catch (e: any) {
       setAdminMessage({
@@ -1108,6 +1577,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       await api.clients.delete(id);
       fetchClients();
+      resetClientsList();
       setAdminMessage({ type: "success", text: "Client deleted." });
     } catch (e: any) {
       setAdminMessage({
@@ -1230,7 +1700,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       await api.invoice.create(payload);
       setInvoiceView("list");
       setInvoiceForm(emptyInvoiceState);
-      fetchInvoices();
+      resetInvoicesList();
     } catch (e: any) {
       setAdminMessage({ type: "error", text: e?.message || "Failed." });
     }
@@ -1314,15 +1784,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Paid":
+  const getStatusColor = (statusValue: string) => {
+    switch (statusValue) {
+      case "paid":
         return "bg-green-50 text-green-600 border-green-200";
-      case "Partially Paid":
+      case "partially_paid":
         return "bg-yellow-50 text-yellow-600 border-yellow-200";
-      case "Overdue":
-        return "bg-red-50 text-red-600 border-red-200";
-      case "Cancelled":
+      case "cancelled":
         return "bg-slate-50 text-slate-600 border-slate-200";
       default:
         return "bg-slate-50 text-slate-600 border-slate-200";
@@ -1340,61 +1808,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const parseDateMs = (value?: string | null) => {
-    if (!value) return null;
-    const ms = Date.parse(value);
-    return Number.isNaN(ms) ? null : ms;
-  };
-
-  const invoiceClientOptions = Array.from(
-    new Set(
-      invoices
-        .map((inv) => (inv.clientName || "").trim())
-        .filter((name) => Boolean(name))
-    )
-  ).sort((a, b) => a.localeCompare(b));
-
-  const invoiceStatusOptions = Array.from(
-    new Set(
-      invoices
-        .map((inv) => (inv.status || "").trim())
-        .filter((s) => Boolean(s))
-    )
-  ).sort((a, b) => a.localeCompare(b));
-
-  const filteredInvoices = invoices.filter((inv) => {
-    const searchOk = inv.clientName
-      .toLowerCase()
-      .includes(invoiceSearch.toLowerCase());
-
-    const statusOk =
-      invoiceStatusFilter === "All" || inv.status === invoiceStatusFilter;
-
-    const clientOk =
-      invoiceClientFilter === "All" || inv.clientName === invoiceClientFilter;
-
-    const invoiceDateMs = parseDateMs(inv.date);
-    const startMs = parseDateMs(invoiceDateRange.start);
-    const endMs = parseDateMs(invoiceDateRange.end);
-
-    const dateOk = (() => {
-      if (!startMs && !endMs) return true;
-      if (invoiceDateMs === null) return false;
-      if (startMs && invoiceDateMs < startMs) return false;
-      if (endMs && invoiceDateMs > endMs) return false;
-      return true;
-    })();
-
-    return searchOk && statusOk && clientOk && dateOk;
-  });
-  const filteredServices = services.filter(
-    (srv) => categoryFilter === "All" || srv.category?.name === categoryFilter
-  );
+  const visibleInvoices = invoices;
+  const filteredServices = servicesList;
 
   const toggleInvoiceSelection = (id: string) => {
     setSelectedInvoiceIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
+  };
+
+  const visibleInvoiceIds = visibleInvoices.map((inv) => inv.id);
+  const allVisibleSelected =
+    visibleInvoiceIds.length > 0 &&
+    visibleInvoiceIds.every((id) => selectedInvoiceIds.includes(id));
+
+  const toggleSelectAllVisibleInvoices = () => {
+    setSelectedInvoiceIds((prev) => {
+      if (allVisibleSelected) {
+        return prev.filter((id) => !visibleInvoiceIds.includes(id));
+      }
+      return Array.from(new Set([...prev, ...visibleInvoiceIds]));
+    });
   };
 
   const handleBulkDownload = () => {
@@ -1719,18 +2153,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {clients
-                    .filter(
-                      (c) =>
-                        (clientFilter === "all" ||
-                          (clientFilter === "active"
-                            ? c.isActive
-                            : !c.isActive)) &&
-                        `${c.businessName} ${c.contactName} ${c.email}`
-                          .toLowerCase()
-                          .includes(clientSearch.toLowerCase())
-                    )
-                    .map((c) => (
+                  {clientsList.map((c) => (
                       <tr
                         key={c.id}
                         role="button"
@@ -1771,16 +2194,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           View <ChevronRight size={16} className="inline ml-1" />
                         </td>
                       </tr>
-                    ))}
+                  ))}
                 </tbody>
               </table>
 
-              {clients.length === 0 && (
+              {clientsList.length === 0 && (
                 <div className="p-12 text-center text-slate-400">
                   <UserCircle size={44} className="mx-auto mb-3 opacity-40" />
                   No clients yet.
                 </div>
               )}
+
+              <div ref={clientsListSentinelRef} />
             </div>
           </div>
         )}
@@ -1893,12 +2318,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </tbody>
               </table>
 
-              {services.length === 0 && (
+              {servicesList.length === 0 && (
                 <div className="p-12 text-center text-slate-400">
                   <Briefcase size={44} className="mx-auto mb-3 opacity-40" />
                   No services yet.
                 </div>
               )}
+
+              <div ref={servicesListSentinelRef} />
             </div>
           </div>
         )}
@@ -1975,6 +2402,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   No employees yet.
                 </div>
               )}
+
+              <div ref={employeesSentinelRef} />
             </div>
           </div>
         )}
@@ -2019,7 +2448,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <input
                       value={invoiceSearch}
                       onChange={(e) => setInvoiceSearch(e.target.value)}
-                      placeholder="Search by client name..."
+                      placeholder="Search by client name or invoice ID..."
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
                     />
                   </div>
@@ -2033,8 +2462,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       >
                         <option value="All">All Status</option>
                         {invoiceStatusOptions.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
+                          <option key={s.value} value={s.value}>
+                            {s.label}
                           </option>
                         ))}
                       </select>
@@ -2046,8 +2475,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       >
                         <option value="All">All Clients</option>
                         {invoiceClientOptions.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
+                          <option key={c.id} value={c.id}>
+                            {c.name}
                           </option>
                         ))}
                       </select>
@@ -2080,13 +2509,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     {selectedInvoiceIds.length > 0 && (
-                      <button
-                        onClick={handleBulkDownload}
-                        className="bg-white border border-slate-200 text-slate-700 px-5 py-3 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
-                      >
-                        <Download size={18} /> Bulk Download (
-                        {selectedInvoiceIds.length})
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={toggleSelectAllVisibleInvoices}
+                          className="bg-white border border-slate-200 text-slate-700 px-4 py-3 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
+                          title={
+                            allVisibleSelected
+                              ? "Unselect all visible"
+                              : "Select all visible"
+                          }
+                        >
+                          {allVisibleSelected ? (
+                            <CheckSquare size={18} />
+                          ) : (
+                            <Square size={18} />
+                          )}
+                          Select All
+                        </button>
+
+                        <button
+                          onClick={handleBulkDownload}
+                          className="bg-white border border-slate-200 text-slate-700 px-5 py-3 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
+                        >
+                          <Download size={18} /> Bulk Download (
+                          {selectedInvoiceIds.length})
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -2105,7 +2553,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {filteredInvoices.map((inv) => (
+                      {visibleInvoices.map((inv) => (
                         <tr
                           key={inv.id}
                           className="hover:bg-slate-50 transition-colors"
@@ -2135,7 +2583,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <td className="px-6 py-4">
                             <span
                               className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(
-                                inv.status
+                                (inv as any).statusValue
                               )}`}
                             >
                               {inv.status}
@@ -2145,8 +2593,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ₹{Number(inv.grandTotal || 0).toLocaleString()}
                           </td>
                           <td className="px-6 py-4 text-right">
-                            {inv.status !== "Paid" &&
-                              inv.status !== "Cancelled" && (
+                            {(inv as any).statusValue !== "paid" &&
+                              (inv as any).statusValue !== "cancelled" && (
                                 <button
                                   onClick={() => openRecordPaymentModal(inv)}
                                   className="font-bold text-sm text-slate-700 hover:underline mr-4"
@@ -2156,7 +2604,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </button>
                               )}
 
-                            {inv.status === "Paid" && inv.hasPipeline && (
+                            {(inv as any).statusValue === "paid" && inv.hasPipeline && (
                               <button
                                 onClick={() => handleStartPipeline(inv)}
                                 title="Start pipeline"
@@ -2190,7 +2638,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </tbody>
                   </table>
 
-                  {filteredInvoices.length === 0 && (
+                  {visibleInvoices.length === 0 && (
                     <div className="p-12 text-center text-slate-400">
                       <FileSpreadsheet
                         size={44}
@@ -2199,6 +2647,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       No invoices.
                     </div>
                   )}
+
+                  <div ref={invoicesSentinelRef} />
                 </div>
               </>
             ) : (

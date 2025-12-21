@@ -1,4 +1,5 @@
 from rest_framework import viewsets
+from core.pagination import StandardResultsSetPagination
 from .models import CustomUser, Service, ClientProfile, ServiceCategory
 from .serializers import UserSerializer, ServiceSerializer, ClientProfileSerializer
 from rest_framework.views import APIView
@@ -27,6 +28,16 @@ class UserViewSet(viewsets.ModelViewSet):
 class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        category = self.request.query_params.get('category')
+        if category and category != 'All':
+            qs = qs.filter(category__name=category)
+
+        return qs
 
 
 class ServiceCategoryViewSet(viewsets.ModelViewSet):
@@ -45,6 +56,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     """
     queryset = CustomUser.objects.exclude(type='client')
     serializer_class = EmployeeSerializer
+    pagination_class = StandardResultsSetPagination
 
     def perform_create(self, serializer):
         # created employee should be active by default and have no usable password
@@ -203,6 +215,29 @@ class ClientViewSet(viewsets.ModelViewSet):
     - GET/PUT/PATCH/DELETE /clients/{id}/
     """
     queryset = ClientProfile.objects.select_related('user').all()
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        status_filter = self.request.query_params.get('status')
+        if status_filter == 'active':
+            qs = qs.filter(user__is_active=True)
+        elif status_filter == 'inactive':
+            qs = qs.filter(user__is_active=False)
+
+        search = (self.request.query_params.get('search') or '').strip()
+        if search:
+            from django.db.models import Q
+
+            qs = qs.filter(
+                Q(company_name__icontains=search)
+                | Q(user__first_name__icontains=search)
+                | Q(user__last_name__icontains=search)
+                | Q(user__email__icontains=search)
+            )
+
+        return qs
 
     def get_serializer_class(self):
         if self.action in ('create', 'update', 'partial_update'):

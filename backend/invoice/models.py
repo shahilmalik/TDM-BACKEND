@@ -11,7 +11,7 @@ import string
 
 
 INVOICE_STATUS = [
-    ("unpaid", "Unpaid"),
+    ("unpaid", "Pending Payment"),
     ("partially_paid", "Partially Paid"),
     ("paid", "Paid"),
     ("cancelled", "Cancelled"),

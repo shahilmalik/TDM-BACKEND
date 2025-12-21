@@ -16,10 +16,13 @@ from rest_framework import mixins
 from rest_framework import routers
 from rest_framework.viewsets import GenericViewSet
 from kanban.models import ContentItem
+from core.pagination import StandardResultsSetPagination
+from django.db.models import Q
 
 class InvoiceViewSet(viewsets.ModelViewSet):
     queryset = Invoice.objects.all().select_related('client', 'authorized_by').prefetch_related('items__service')
     serializer_class = InvoiceSerializer
+    pagination_class = StandardResultsSetPagination
     # permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
@@ -35,6 +38,16 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             queryset = self.get_queryset().filter(client=request.user)
         else:
             queryset = self.get_queryset()
+
+        search = (request.query_params.get('search') or request.query_params.get('q') or '').strip()
+        if search:
+            queryset = queryset.filter(
+                Q(invoice_id__icontains=search)
+                | Q(client__first_name__icontains=search)
+                | Q(client__last_name__icontains=search)
+                | Q(client__email__icontains=search)
+                | Q(client__profile__company_name__icontains=search)
+            ).distinct()
 
         # Filters (backend-driven)
         status_value = request.query_params.get('status') or None
@@ -62,6 +75,17 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(date__lte=end_date)
             except Exception:
                 pass
+
+        queryset = queryset.order_by('-date', '-id')
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            resp = self.get_paginated_response(serializer.data)
+            data = dict(resp.data)
+            data['success'] = True
+            # Backward-compat: keep existing key expected by frontend.
+            data['invoices'] = data.get('results', [])
+            return Response(data)
 
         serializer = self.get_serializer(queryset, many=True)
         return Response({"success": True, "invoices": serializer.data})

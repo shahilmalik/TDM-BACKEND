@@ -61,6 +61,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     payment_term = serializers.PrimaryKeyRelatedField(queryset=PaymentTerm.objects.all(), allow_null=True, required=False)
     paid_amount = serializers.SerializerMethodField()
     pending_amount = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
     has_pipeline = serializers.SerializerMethodField()
     sender_business_info_id = serializers.IntegerField(write_only=True, required=False)
 
@@ -69,7 +70,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'invoice_id', 'client', 'date', 'start_date', 'due_date', 'items',
             'gst_percentage', 'gst_amount', 'total_amount', 'paid_amount', 'pending_amount',
-            'status', 'payment_mode', 'payment_term', 'authorized_by', 'has_pipeline',
+            'status', 'status_label', 'payment_mode', 'payment_term', 'authorized_by', 'has_pipeline',
             'sender_name', 'sender_logo', 'sender_address', 'sender_phone', 'sender_email',
             'sender_bank_account_name', 'sender_bank_account_number', 'sender_bank_name', 'sender_ifsc',
             'sender_business_info_id',
@@ -91,6 +92,12 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def get_pending_amount(self, obj):
         return obj.pending_amount
+
+    def get_status_label(self, obj):
+        try:
+            return obj.get_status_display()
+        except Exception:
+            return obj.status
 
     def get_has_pipeline(self, obj):
         try:
