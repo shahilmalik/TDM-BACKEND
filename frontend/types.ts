@@ -72,6 +72,7 @@ export type PipelineStatus =
   | "design"
   | "review"
   | "approval"
+  | "finalized"
   | "scheduled"
   | "posted";
 

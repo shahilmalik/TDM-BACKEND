@@ -9,6 +9,7 @@ KANBAN_COLUMNS = [
     ("design_creative", "Design/Creative"),
     ("internal_review", "Internal Review"),
     ("client_approval", "Client Approval"),
+    ("finalized", "Finalized"),
     ("ready", "Ready to Post"),
     ("scheduled", "Scheduled"),
     ("posted", "Posted"),

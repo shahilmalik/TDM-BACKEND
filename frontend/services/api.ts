@@ -385,6 +385,25 @@ export const api = {
   meta: {
     getInstagram: (clientId: string | number) =>
       request<any>(`/meta/instagram/${clientId}/`, { method: "GET" }),
+    getPostDetail: (postId: string | number) =>
+      request<any>(`/meta/post/${postId}/`, { method: "GET" }),
+
+    dashboardInsights: (params: { client_id: string | number; month?: string }) => {
+      const qs = new URLSearchParams({
+        client_id: String(params.client_id),
+        ...(params.month ? { month: params.month } : {}),
+      });
+      return request<any>(`/meta/dashboard/insights/?${qs.toString()}`, {
+        method: "GET",
+      });
+    },
+    topPosts: (clientId: string | number) =>
+      request<any>(
+        `/meta/dashboard/top-posts/?client_id=${encodeURIComponent(
+          String(clientId)
+        )}`,
+        { method: "GET" }
+      ),
     listTokens: () =>
       request<{ tokens: MetaToken[]; total_count: number }>("/meta/tokens/", {
         method: "GET",
@@ -402,6 +421,12 @@ export const api = {
       }),
     listPages: () =>
       request<{ pages: MetaPage[] }>("/meta/pages/", { method: "GET" }),
+
+    syncClientPage: (data: { client_id: string | number; fb_page_id: string }) =>
+      request<any>("/meta/sync/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
   },
 };
 
@@ -413,6 +438,7 @@ export const mapBackendColumnToStatus = (col: string): PipelineStatus => {
     design_creative: "design",
     internal_review: "review",
     client_approval: "approval",
+    finalized: "finalized",
     scheduled: "scheduled",
     posted: "posted",
   };
@@ -426,6 +452,7 @@ export const mapStatusToBackendColumn = (status: PipelineStatus): string => {
     design: "design_creative",
     review: "internal_review",
     approval: "client_approval",
+    finalized: "finalized",
     scheduled: "scheduled",
     posted: "posted",
   };

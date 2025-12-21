@@ -177,7 +177,11 @@ class ClientPageSyncView(APIView):
 				
 				if page_data:
 					break
-			except MetaGraphAPIError:
+			except MetaGraphAPIError as e:
+				# Only mark the *current* token invalid on auth failures.
+				if getattr(e, "status_code", None) == 401:
+					token.status = "invalid"
+					token.save(update_fields=["status", "updated_at"])
 				continue
 		
 		if not page_data or not owning_token:

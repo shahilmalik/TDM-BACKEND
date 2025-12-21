@@ -101,6 +101,7 @@ const PIPELINE_COLUMNS: { id: PipelineStatus; label: string; color: string }[] =
     { id: "design", label: "Design / Creative", color: "border-purple-400" },
     { id: "review", label: "Internal Review", color: "border-yellow-400" },
     { id: "approval", label: "Client Approval", color: "border-orange-500" },
+    { id: "finalized", label: "Finalized", color: "border-teal-500" },
     { id: "scheduled", label: "Scheduled", color: "border-emerald-500" },
     { id: "posted", label: "Posted", color: "border-slate-800" },
   ];
@@ -137,9 +138,101 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
   const [selectedPost, setSelectedPost] = useState<PipelinePost | null>(null);
   const [selectedInstaPost, setSelectedInstaPost] = useState<any>(null);
 
+  // Meta / Instagram Data
+  const [metaInsights, setMetaInsights] = useState<any>(MOCK_META_INSIGHTS);
+  const [metaTopPosts, setMetaTopPosts] = useState<any>(MOCK_META_MEDIA);
+  const [instagramData, setInstagramData] = useState<any>(INSTAGRAM_MOCK_DATA);
+  const [isMetaLoading, setIsMetaLoading] = useState(false);
+  const [metaError, setMetaError] = useState<string | null>(null);
+  const [isInstagramLoading, setIsInstagramLoading] = useState(false);
+  const [instagramError, setInstagramError] = useState<string | null>(null);
+
   // Filters for Insights
   const [insightMonth, setInsightMonth] = useState("12");
   const [insightYear, setInsightYear] = useState("2025");
+
+  const resolveClientId = () => {
+    const idFromProfile = (userProfile as any)?.id;
+    return idFromProfile || localStorage.getItem("client_id");
+  };
+
+  const loadClientDashboardMeta = async () => {
+    const demoMode = localStorage.getItem("demoMode");
+    if (demoMode) {
+      setMetaInsights(MOCK_META_INSIGHTS);
+      setMetaTopPosts(MOCK_META_MEDIA);
+      setMetaError(null);
+      return;
+    }
+
+    const clientId = resolveClientId();
+    const accessToken = localStorage.getItem("accessToken");
+    if (!clientId || !accessToken) return;
+
+    const month = `${insightYear}-${insightMonth}`;
+    setIsMetaLoading(true);
+    setMetaError(null);
+    try {
+      const [insightsRes, topPostsRes] = await Promise.all([
+        api.meta.dashboardInsights({ client_id: clientId, month }),
+        api.meta.topPosts(clientId),
+      ]);
+      setMetaInsights(insightsRes);
+      setMetaTopPosts(topPostsRes);
+    } catch (e: any) {
+      setMetaError(e?.message || "Failed to load Meta insights.");
+    } finally {
+      setIsMetaLoading(false);
+    }
+  };
+
+  const loadInstagramInsights = async () => {
+    const demoMode = localStorage.getItem("demoMode");
+    if (demoMode) {
+      setInstagramData(INSTAGRAM_MOCK_DATA);
+      setInstagramError(null);
+      return;
+    }
+
+    const clientId = resolveClientId();
+    const accessToken = localStorage.getItem("accessToken");
+    if (!clientId || !accessToken) return;
+
+    setIsInstagramLoading(true);
+    setInstagramError(null);
+    try {
+      const res = await api.meta.getInstagram(clientId);
+      setInstagramData(res);
+    } catch (e: any) {
+      setInstagramError(e?.message || "Failed to load Instagram insights.");
+    } finally {
+      setIsInstagramLoading(false);
+    }
+  };
+
+  const openInstagramPost = async (item: any) => {
+    const demoMode = localStorage.getItem("demoMode");
+    if (demoMode) {
+      setSelectedInstaPost(MOCK_POST_DETAIL(item).post);
+      return;
+    }
+
+    // Optimistic open to keep UX responsive; hydrate with real detail when loaded.
+    setSelectedInstaPost({
+      ...item,
+      caption: item.caption || "",
+      comments: Array.isArray(item.comments) ? item.comments : [],
+      insights: Array.isArray(item.insights) ? item.insights : [],
+    });
+
+    try {
+      const detail = await api.meta.getPostDetail(item.id);
+      const post = detail?.post || detail;
+      if (post) setSelectedInstaPost(post);
+    } catch (e) {
+      // Keep the optimistic view if detail fetch fails.
+    }
+  };
 
   // Initial Fetch
   useEffect(() => {
@@ -255,6 +348,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
       refreshProfile();
     }
   }, [activeTab]);
+
+  // Load client dashboard Meta data
+  useEffect(() => {
+    if (activeTab !== "overview") return;
+    loadClientDashboardMeta();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, (userProfile as any)?.id, insightMonth, insightYear]);
+
+  // Load Instagram data when tab is opened
+  useEffect(() => {
+    if (activeTab !== "instagram") return;
+    loadInstagramInsights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, (userProfile as any)?.id]);
 
   // Helper to map backend profile shape to frontend `UserProfile`
   const setProfileFromBackend = (backendProfile: any) => {
@@ -804,28 +911,70 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                 </div>
               </div>
 
+              {metaError && (
+                <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-2xl px-5 py-3 text-sm font-medium">
+                  {metaError}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-12">
-                {MOCK_META_INSIGHTS.pages[0].insights.map((insight) => (
-                  <div
-                    key={insight.title}
-                    className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative group"
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">
-                        {insight.title}
-                      </p>
+                {(() => {
+                  const all = (metaInsights?.pages || [])
+                    .flatMap((p: any) => p?.insights || [])
+                    .filter(Boolean);
+
+                  if (isMetaLoading) {
+                    return Array.from({ length: 5 }).map((_, idx) => (
                       <div
-                        className="opacity-0 group-hover:opacity-100 transition-opacity cursor-help text-slate-300 hover:text-slate-400"
-                        title={insight.description}
+                        key={idx}
+                        className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"
                       >
-                        <Info size={14} />
+                        <div className="h-3 w-2/3 bg-slate-100 rounded mb-4" />
+                        <div className="h-8 w-1/2 bg-slate-100 rounded" />
                       </div>
-                    </div>
-                    <p className="text-2xl font-black text-slate-900">
-                      {insight.value.toLocaleString()}
-                    </p>
-                  </div>
-                ))}
+                    ));
+                  }
+
+                  if (all.length === 0) {
+                    return (
+                      <div className="col-span-full bg-white p-6 rounded-2xl border border-slate-100 text-slate-500">
+                        No insights available.
+                      </div>
+                    );
+                  }
+
+                  return all.slice(0, 10).map((insight: any) => {
+                    const rawValue = insight?.value;
+                    const value =
+                      typeof rawValue === "number"
+                        ? rawValue
+                        : Number.isFinite(Number(rawValue))
+                          ? Number(rawValue)
+                          : 0;
+
+                    return (
+                      <div
+                        key={`${insight?.title || "insight"}-${insight?.description || ""}`}
+                        className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative group"
+                      >
+                        <div className="flex justify-between items-start mb-3">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">
+                            {insight?.title || "Insight"}
+                          </p>
+                          <div
+                            className="opacity-0 group-hover:opacity-100 transition-opacity cursor-help text-slate-300 hover:text-slate-400"
+                            title={insight?.description || ""}
+                          >
+                            <Info size={14} />
+                          </div>
+                        </div>
+                        <p className="text-2xl font-black text-slate-900">
+                          {value.toLocaleString()}
+                        </p>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
 
               {/* Media Highlights */}
@@ -837,7 +986,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                     Posts
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
-                    {MOCK_META_MEDIA.media.most_liked.map((post) => (
+                    {(metaTopPosts?.media?.most_liked || []).map((post: any) => (
                       <div
                         key={post.id}
                         className="group relative aspect-square bg-slate-200 rounded-2xl overflow-hidden shadow-sm"
@@ -867,7 +1016,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                     Content
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
-                    {MOCK_META_MEDIA.media.recent.map((post) => (
+                    {(metaTopPosts?.media?.recent || []).map((post: any) => (
                       <div
                         key={post.id}
                         className="group relative aspect-square bg-slate-200 rounded-2xl overflow-hidden shadow-sm"
@@ -1110,23 +1259,31 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
         {activeTab === "instagram" && (
           <div className="animate-in fade-in duration-500">
             <div className="max-w-4xl mx-auto">
+              {instagramError && (
+                <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-2xl px-5 py-3 text-sm font-medium">
+                  {instagramError}
+                </div>
+              )}
+
               {/* Profile Header */}
               <div className="flex flex-col md:flex-row items-center md:items-start gap-8 md:gap-16 mb-12 pb-12 border-b border-slate-200">
                 <div className="w-32 h-32 md:w-40 md:h-40 rounded-full border-2 p-1 overflow-hidden bg-white shadow-sm flex-shrink-0">
                   <img
-                    src={INSTAGRAM_MOCK_DATA.profile.profile_picture_url}
-                    alt={INSTAGRAM_MOCK_DATA.profile.username}
+                    src={instagramData?.profile?.profile_picture_url || ""}
+                    alt={instagramData?.profile?.username || "Instagram"}
                     className="w-full h-full object-cover rounded-full"
                   />
                 </div>
                 <div className="flex-1 text-center md:text-left">
                   <div className="flex flex-col md:flex-row items-center gap-6 mb-6">
                     <h2 className="text-2xl font-normal text-slate-900 tracking-tight">
-                      {INSTAGRAM_MOCK_DATA.profile.username}
+                      {isInstagramLoading
+                        ? "Loading…"
+                        : instagramData?.profile?.username || "Not linked"}
                     </h2>
                     <div className="flex gap-2">
                       <a
-                        href={`https://instagram.com/${INSTAGRAM_MOCK_DATA.profile.username}`}
+                        href={`https://instagram.com/${instagramData?.profile?.username || ""}`}
                         target="_blank"
                         rel="noreferrer"
                         className="px-6 py-1.5 bg-slate-900 text-white rounded-lg font-bold text-sm hover:bg-slate-800 transition-colors"
@@ -1139,19 +1296,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                   <div className="flex justify-center md:justify-start gap-8 md:gap-12 mb-6">
                     <div className="text-center md:text-left">
                       <span className="font-bold text-slate-900">
-                        {INSTAGRAM_MOCK_DATA.profile.media_count}
+                        {instagramData?.profile?.media_count ?? 0}
                       </span>
                       <span className="ml-1 text-slate-500">posts</span>
                     </div>
                     <div className="text-center md:text-left">
                       <span className="font-bold text-slate-900">
-                        {INSTAGRAM_MOCK_DATA.profile.followers_count}
+                        {instagramData?.profile?.followers_count ?? 0}
                       </span>
                       <span className="ml-1 text-slate-500">followers</span>
                     </div>
                     <div className="text-center md:text-left">
                       <span className="font-bold text-slate-900">
-                        {INSTAGRAM_MOCK_DATA.profile.follows_count}
+                        {instagramData?.profile?.follows_count ?? 0}
                       </span>
                       <span className="ml-1 text-slate-500">following</span>
                     </div>
@@ -1159,10 +1316,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
 
                   <div className="text-sm">
                     <p className="font-bold text-slate-900 mb-1">
-                      Hotel Raaj Bhaavan
+                      {instagramData?.profile?.name || ""}
                     </p>
                     <p className="text-slate-700 whitespace-pre-wrap font-medium">
-                      {INSTAGRAM_MOCK_DATA.profile.biography}
+                      {instagramData?.profile?.biography || ""}
                     </p>
                   </div>
                 </div>
@@ -1170,12 +1327,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
 
               {/* Media Grid */}
               <div className="grid grid-cols-3 gap-1 md:gap-8">
-                {INSTAGRAM_MOCK_DATA.media.map((item) => (
+                {(instagramData?.media || []).map((item: any) => (
                   <div
                     key={item.id}
-                    onClick={() =>
-                      setSelectedInstaPost(MOCK_POST_DETAIL(item).post)
-                    }
+                    onClick={() => openInstagramPost(item)}
                     className="relative aspect-square group overflow-hidden bg-slate-200 rounded-sm md:rounded-xl shadow-sm cursor-pointer"
                   >
                     <img
@@ -1203,6 +1358,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                   </div>
                 ))}
               </div>
+
+              {!isInstagramLoading && (instagramData?.media || []).length === 0 && (
+                <div className="mt-6 text-center text-slate-500">
+                  No Instagram media found for this account.
+                </div>
+              )}
             </div>
           </div>
         )}

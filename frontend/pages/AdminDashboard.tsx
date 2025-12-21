@@ -82,6 +82,7 @@ const PIPELINE_COLUMNS: { id: PipelineStatus; label: string; color: string }[] =
     { id: "design", label: "Design / Creative", color: "border-purple-400" },
     { id: "review", label: "Internal Review", color: "border-yellow-400" },
     { id: "approval", label: "Client Approval", color: "border-orange-500" },
+    { id: "finalized", label: "Finalized", color: "border-teal-500" },
     { id: "scheduled", label: "Scheduled", color: "border-emerald-500" },
     { id: "posted", label: "Posted", color: "border-slate-800" },
   ];
@@ -170,6 +171,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Meta State
   const [metaTokens, setMetaTokens] = useState<MetaToken[]>([]);
   const [metaPages, setMetaPages] = useState<MetaPage[]>([]);
+  const [selectedClientMetaPageId, setSelectedClientMetaPageId] =
+    useState<string>("");
+  const [isMetaSyncLoading, setIsMetaSyncLoading] = useState(false);
   const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
   const [metaStep, setMetaStep] = useState<1 | 2>(1);
   const [metaForm, setMetaForm] = useState({
@@ -529,6 +533,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const openClientDetail = async (clientId: string | number) => {
     try {
+      setSelectedClientMetaPageId("");
+
+      // Load available Meta pages for the Sync dropdown (used in Client Details).
+      // Keep this independent from the Meta tab so clients->detail always has data.
+      try {
+        const pageRes = await api.meta.listPages();
+        setMetaPages(pageRes.pages || []);
+      } catch (e) {
+        // non-fatal
+      }
+
       // show existing basic info immediately if available
       const existing = clients.find((c) => String(c.id) === String(clientId));
       if (existing) setSelectedClientDetail(existing);
@@ -582,6 +597,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         type: "error",
         text: e?.message || "Failed to load client details.",
       });
+    }
+  };
+
+  const handleSyncClientMetaPage = async () => {
+    if (!selectedClientDetail) return;
+    if (!selectedClientMetaPageId) {
+      setAdminMessage({
+        type: "error",
+        text: "Please select a Meta account/page to sync.",
+      });
+      return;
+    }
+
+    setIsMetaSyncLoading(true);
+    try {
+      await api.meta.syncClientPage({
+        client_id: selectedClientDetail.id,
+        fb_page_id: selectedClientMetaPageId,
+      });
+      setAdminMessage({ type: "success", text: "Meta account synced." });
+    } catch (e: any) {
+      setAdminMessage({
+        type: "error",
+        text: e?.message || "Failed to sync Meta account.",
+      });
+    } finally {
+      setIsMetaSyncLoading(false);
     }
   };
 
@@ -3010,6 +3052,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
               )}
+
+              <div className="bg-white border border-slate-100 rounded-2xl p-4">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                  Meta Sync
+                </div>
+                <div className="flex flex-col md:flex-row gap-3 md:items-center">
+                  <select
+                    value={selectedClientMetaPageId}
+                    onChange={(e) => setSelectedClientMetaPageId(e.target.value)}
+                    className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  >
+                    <option value="">-- Select Account/Page --</option>
+                    {metaPages.map((p) => (
+                      <option
+                        key={`${p.token_id}-${p.fb_page_id}`}
+                        value={p.fb_page_id}
+                      >
+                        {p.fb_page_name} — {p.account_label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={handleSyncClientMetaPage}
+                    disabled={isMetaSyncLoading}
+                    className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#6C5CE7] hover:bg-[#5a4ad1] disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isMetaSyncLoading ? "Syncing..." : "Sync"}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Select a Meta page/account and click Sync to link it to this client.
+                </p>
+              </div>
             </div>
           </div>
         </div>

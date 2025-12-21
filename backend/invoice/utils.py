@@ -17,6 +17,7 @@ def build_invoice_context(invoice):
     # sender/company snapshot fields
     company = {
         'name': invoice.sender_name or '',
+        'logo': invoice.sender_logo or '',
         'address_line1': (invoice.sender_name or ''),
         'address_line2': (invoice.sender_address or ''),
         'phone': invoice.sender_phone or '',
