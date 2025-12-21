@@ -7,24 +7,9 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap');
 
-        :root {
-            --brand-orange: #FF6B6B;
-            --brand-purple: #6C5CE7;
-            --slate-900: #0F172A;
-            --slate-700: #334155;
-            --slate-500: #64748b;
-            --slate-100: #f1f5f9;
-        }
-
-        * {
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-
         body {
             font-family: 'Inter', sans-serif;
-            color: var(--slate-700);
+            color: #334155;
             background-color: #f8fafc;
             margin: 0;
             padding: 0;
@@ -38,24 +23,33 @@
             margin: 20px auto;
             background: #fff;
             position: relative;
-            display: flex;
-            flex-direction: column;
             box-shadow: 0 0 20px rgba(0,0,0,0.05);
         }
 
         /* Top Accent Bar */
         .top-accent {
             height: 8px;
-            background: linear-gradient(90deg, var(--brand-orange), var(--brand-purple));
+            background: linear-gradient(90deg, #FF6B6B, #6C5CE7);
             width: 100%;
         }
 
         header {
             padding: 40px 50px;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            border-bottom: 1px solid var(--slate-100);
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .header-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .header-left {
+            width: 60%;
+            vertical-align: top;
+        }
+        .header-right {
+            width: 40%;
+            vertical-align: top;
+            text-align: right;
         }
 
         .company-info h1 {
@@ -63,14 +57,14 @@
             margin: 0;
             font-size: 28px;
             font-weight: 800;
-            color: var(--slate-900);
+            color: #0F172A;
             letter-spacing: -0.5px;
         }
-        .company-info h1 span { color: var(--brand-purple); }
+        .company-info h1 span { color: #6C5CE7; }
         
         .company-details {
             margin-top: 10px;
-            color: var(--slate-500);
+            color: #64748b;
             line-height: 1.6;
         }
 
@@ -83,33 +77,52 @@
             font-size: 40px;
             font-weight: 800;
             text-transform: uppercase;
-            color: var(--slate-100);
+            color: #f1f5f9;
             line-height: 1;
             margin-bottom: 10px;
         }
 
-        .meta-grid {
-            display: grid;
-            grid-template-columns: auto auto;
-            gap: 5px 20px;
-            text-align: right;
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
         }
-        .meta-label { color: var(--slate-500); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
-        .meta-value { color: var(--slate-900); font-weight: 700; font-size: 13px; }
+        .meta-table td {
+            padding: 2px 0;
+        }
+        .meta-table .meta-label {
+            text-align: right;
+            padding-right: 20px;
+            white-space: nowrap;
+        }
+        .meta-table .meta-value {
+            text-align: right;
+            white-space: nowrap;
+        }
+        .meta-label { color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+        .meta-value { color: #0F172A; font-weight: 700; font-size: 13px; }
 
         .billing-section {
             padding: 40px 50px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 50px;
             background-color: #fafbfd;
+        }
+
+        .billing-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .billing-col {
+            width: 50%;
+            vertical-align: top;
+        }
+        .billing-col + .billing-col {
+            padding-left: 50px;
         }
 
         .section-title {
             font-family: 'Outfit', sans-serif;
             font-size: 10px;
             text-transform: uppercase;
-            color: var(--brand-purple);
+            color: #6C5CE7;
             font-weight: 800;
             margin-bottom: 12px;
             letter-spacing: 1px;
@@ -122,35 +135,41 @@
             background: white;
             padding: 20px;
             border-radius: 12px;
-            border: 1px solid var(--slate-100);
+            border: 1px solid #f1f5f9;
+        }
+
+        /* Keep Bill To / Payment info cards a fixed, matching size */
+        .billing-section .client-card {
+            height: 150px;
+            box-sizing: border-box;
+            overflow: hidden;
         }
 
         .client-name {
             font-size: 16px;
             font-weight: 700;
-            color: var(--slate-900);
+            color: #0F172A;
             margin-bottom: 5px;
         }
 
         .client-address {
-            color: var(--slate-500);
+            color: #64748b;
             line-height: 1.6;
         }
 
         .payment-method-tag {
             display: inline-block;
             padding: 4px 10px;
-            background: var(--slate-100);
+            background: #f1f5f9;
             border-radius: 6px;
             font-weight: 700;
-            color: var(--slate-900);
+            color: #0F172A;
             font-size: 11px;
             margin-top: 5px;
         }
 
         .items-section {
             padding: 0 50px;
-            flex-grow: 1;
         }
 
         table.items-table {
@@ -166,31 +185,43 @@
             font-size: 10px;
             text-transform: uppercase;
             font-weight: 800;
-            color: var(--slate-500);
-            border-bottom: 2px solid var(--slate-900);
+            color: #64748b;
+            border-bottom: 2px solid #0F172A;
         }
 
         .items-table td {
             padding: 20px 10px;
-            border-bottom: 1px solid var(--slate-100);
+            border-bottom: 1px solid #f1f5f9;
             vertical-align: top;
+        }
+
+        /* Ensure header labels align with column values */
+        .items-table th.qty-col,
+        .items-table td.qty-col {
+            width: 70px;
+            white-space: nowrap;
+        }
+        .items-table th.amount-col,
+        .items-table td.amount-col {
+            width: 130px;
+            white-space: nowrap;
         }
 
         .item-name {
             font-weight: 700;
-            color: var(--slate-900);
+            color: #0F172A;
             font-size: 13px;
             margin-bottom: 4px;
         }
         .item-desc {
-            color: var(--slate-500);
+            color: #64748b;
             font-size: 11px;
             max-width: 350px;
         }
         .item-hsn {
             font-family: 'ui-monospace', 'Menlo', 'Monaco', 'Consolas', monospace;
             font-size: 10px;
-            color: var(--slate-500);
+            color: #64748b;
             margin-top: 5px;
         }
 
@@ -201,15 +232,22 @@
             padding: 40px 50px;
         }
 
-        .bottom-grid {
-            display: grid;
-            grid-template-columns: 1.5fr 1fr;
-            gap: 40px;
-            align-items: end;
+        .bottom-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .bottom-left {
+            width: 60%;
+            vertical-align: top;
+            padding-right: 40px;
+        }
+        .bottom-right {
+            width: 40%;
+            vertical-align: top;
         }
 
         .bank-card {
-            background: var(--slate-900);
+            background: #0F172A;
             color: white;
             padding: 25px;
             border-radius: 16px;
@@ -229,7 +267,7 @@
         }
 
         .bank-card .bank-title {
-            color: var(--brand-orange);
+            color: #FF6B6B;
             font-size: 10px;
             font-weight: 800;
             text-transform: uppercase;
@@ -238,13 +276,17 @@
             display: block;
         }
 
-        .bank-info-row {
-            display: flex;
-            margin-bottom: 8px;
+        .bank-table {
+            width: 100%;
+            border-collapse: collapse;
             font-size: 11px;
         }
-        .bank-info-label { width: 100px; color: #94a3b8; font-weight: 500; }
-        .bank-info-value { flex: 1; font-weight: 600; color: #f8fafc; }
+        .bank-table td {
+            padding: 4px 0;
+            vertical-align: top;
+        }
+        .bank-info-label { width: 110px; color: #94a3b8; font-weight: 500; }
+        .bank-info-value { font-weight: 600; color: #f8fafc; }
 
         .summary-table {
             width: 100%;
@@ -253,18 +295,18 @@
             padding: 8px 0;
         }
         .summary-label {
-            color: var(--slate-500);
+            color: #64748b;
             font-weight: 500;
         }
         .summary-value {
             text-align: right;
             font-weight: 700;
-            color: var(--slate-900);
+            color: #0F172A;
             font-size: 13px;
         }
 
         .total-row {
-            border-top: 2px solid var(--slate-100);
+            border-top: 2px solid #f1f5f9;
             margin-top: 10px;
             padding-top: 15px;
         }
@@ -272,22 +314,22 @@
             font-family: 'Outfit', sans-serif;
             font-size: 18px;
             font-weight: 800;
-            color: var(--slate-900);
+            color: #0F172A;
         }
         .grand-total-value {
             font-family: 'Outfit', sans-serif;
             font-size: 24px;
             font-weight: 800;
-            color: var(--slate-900);
+            color: #0F172A;
             text-align: right;
         }
 
         .terms-section {
             margin-top: 30px;
             padding-top: 20px;
-            border-top: 1px solid var(--slate-100);
+            border-top: 1px solid #f1f5f9;
             font-size: 10px;
-            color: var(--slate-500);
+            color: #64748b;
             line-height: 1.6;
         }
 
@@ -313,74 +355,89 @@
     <div class="top-accent"></div>
     
     <header>
-        <div class="company-info">
-            {% if company.logo %}
-                <img src="{{ company.logo }}" alt="{{ company.name }} logo" style="max-height: 60px; margin-bottom: 15px;">
-            {% else %}
-                <h1>Tarviz<span>Digimart</span></h1>
-            {% endif %}
-            <div class="company-details">
-                <strong>{{ company.name }}</strong><br>
-                {{ company.address_line1 }}<br>
-                {{ company.address_line2 }}<br>
-                <span style="color: var(--slate-900);">{{ company.email }}</span> | {{ company.phone }}
-            </div>
-        </div>
-        
-        <div class="invoice-status-box">
-            <div class="invoice-label">Invoice</div>
-            <div class="meta-grid">
-                <span class="meta-label">Invoice Number</span>
-                <span class="meta-value">{{ invoice.number }}</span>
-                
-                <span class="meta-label">Invoice Date</span>
-                <span class="meta-value">{{ invoice.date }}</span>
-                
-                {% if invoice.due_date %}
-                <span class="meta-label" style="color: var(--brand-orange);">Due Date</span>
-                <span class="meta-value" style="color: var(--brand-orange);">{{ invoice.due_date }}</span>
-                {% endif %}
-            </div>
-        </div>
+        <table class="header-table" cellpadding="0" cellspacing="0">
+            <tr>
+                <td class="header-left">
+                    <div class="company-info">
+                        {% if company.logo %}
+                            <img src="{{ company.logo }}" alt="{{ company.name }} logo" style="max-height: 110px; max-width: 280px; height: auto; width: auto; margin-bottom: 15px;">
+                        {% else %}
+                            <h1>Tarviz<span>Digimart</span></h1>
+                        {% endif %}
+                        <div class="company-details">
+                            <strong>{{ company.name }}</strong><br>
+                            {{ company.address_line1 }}<br>
+                            {{ company.address_line2 }}<br>
+                            <span style="color: #0F172A;">{{ company.email }}</span> | {{ company.phone }}
+                        </div>
+                    </div>
+                </td>
+                <td class="header-right">
+                    <div class="invoice-status-box">
+                        <div class="invoice-label">Invoice</div>
+                        <table class="meta-table" cellpadding="0" cellspacing="0">
+                            <tr>
+                                <td class="meta-label">Invoice Number</td>
+                                <td class="meta-value">{{ invoice.number }}</td>
+                            </tr>
+                            <tr>
+                                <td class="meta-label">Invoice Date</td>
+                                <td class="meta-value">{{ invoice.date }}</td>
+                            </tr>
+                            {% if invoice.due_date %}
+                            <tr>
+                                <td class="meta-label" style="color: #FF6B6B;">Due Date</td>
+                                <td class="meta-value" style="color: #FF6B6B;">{{ invoice.due_date }}</td>
+                            </tr>
+                            {% endif %}
+                        </table>
+                    </div>
+                </td>
+            </tr>
+        </table>
     </header>
 
     <div class="billing-section">
-        <div>
-            <span class="section-title">Bill To</span>
-            <div class="client-card">
-                <div class="client-name">{{ client.business_name }}</div>
-                <div class="client-address">
-                    {{ client.address }}<br>
-                    <strong>Phone:</strong> {{ client.phone }}
-                    {% if client.gstin %}
-                    <br><strong>GSTIN:</strong> <span class="font-mono" style="color: var(--slate-900);">{{ client.gstin }}</span>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        <div>
-            <span class="section-title">Payment info</span>
-            <div class="client-card">
-                <div style="margin-bottom: 15px;">
-                    <span class="meta-label" style="display: block; margin-bottom: 4px;">Method</span>
-                    <span class="payment-method-tag">{{ invoice.payment_mode }}</span>
-                </div>
-                <div>
-                    <span class="meta-label" style="display: block; margin-bottom: 4px;">Terms</span>
-                    <span style="font-weight: 600; color: var(--slate-900);">{{ invoice.payment_terms }}</span>
-                </div>
-            </div>
-        </div>
+        <table class="billing-table" cellpadding="0" cellspacing="0">
+            <tr>
+                <td class="billing-col">
+                    <span class="section-title">Bill To</span>
+                    <div class="client-card">
+                        <div class="client-name">{{ client.business_name }}</div>
+                        <div class="client-address">
+                            {{ client.address }}<br>
+                            <strong>Phone:</strong> {{ client.phone }}
+                            {% if client.gstin %}
+                            <br><strong>GSTIN:</strong> <span class="font-mono" style="color: #0F172A;">{{ client.gstin }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </td>
+                <td class="billing-col">
+                    <span class="section-title">Payment info</span>
+                    <div class="client-card">
+                        <div style="margin-bottom: 15px;">
+                            <span class="meta-label" style="display: block; margin-bottom: 4px;">Method</span>
+                            <span class="payment-method-tag">{{ invoice.payment_mode }}</span>
+                        </div>
+                        <div>
+                            <span class="meta-label" style="display: block; margin-bottom: 4px;">Terms</span>
+                            <span style="font-weight: 600; color: #0F172A;">{{ invoice.payment_terms }}</span>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        </table>
     </div>
 
     <div class="items-section">
         <table class="items-table">
             <thead>
                 <tr>
-                    <th style="width: 55%;">Service Description</th>
-                    <th style="width: 15%;">HSN/SAC</th>
-                    <th class="text-right" style="width: 10%;">Qty</th>
-                    <th class="text-right" style="width: 20%;">Amount</th>
+                    <th>Service Description</th>
+                    <th>HSN/SAC</th>
+                    <th class="text-right qty-col">Qty</th>
+                    <th class="text-right amount-col">Amount</th>
                 </tr>
             </thead>
             <tbody>
@@ -391,8 +448,8 @@
                         <div class="item-desc">{{ item.description }}</div>
                     </td>
                     <td class="font-mono">{{ item.hsn_sac }}</td>
-                    <td class="text-right font-mono">{{ item.quantity }}</td>
-                    <td class="text-right font-mono" style="font-weight: 700; color: var(--slate-900);">{{ item.total }}</td>
+                    <td class="text-right font-mono qty-col">{{ item.quantity }}</td>
+                    <td class="text-right font-mono amount-col" style="font-weight: 700; color: #0F172A;">{{ item.total }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -400,31 +457,36 @@
     </div>
 
     <div class="footer-container">
-        <div class="bottom-grid">
-            <div class="bank-details">
-                <div class="bank-card">
-                    <span class="bank-title">Transfer Funds To</span>
-                    <div class="bank-info-row">
-                        <span class="bank-info-label">Account Name</span>
-                        <span class="bank-info-value">{{ bank.account_name }}</span>
+        <table class="bottom-table" cellpadding="0" cellspacing="0">
+            <tr>
+                <td class="bottom-left">
+                    <div class="bank-details">
+                        <div class="bank-card">
+                            <span class="bank-title">Transfer Funds To</span>
+                            <table class="bank-table" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td class="bank-info-label">Account Name</td>
+                                    <td class="bank-info-value">{{ bank.account_name }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="bank-info-label">Bank Name</td>
+                                    <td class="bank-info-value">{{ bank.bank_name }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="bank-info-label">Account No</td>
+                                    <td class="bank-info-value font-mono" style="letter-spacing: 1px;">{{ bank.account_number }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="bank-info-label">IFSC Code</td>
+                                    <td class="bank-info-value font-mono">{{ bank.ifsc }}</td>
+                                </tr>
+                            </table>
+                        </div>
                     </div>
-                    <div class="bank-info-row">
-                        <span class="bank-info-label">Bank Name</span>
-                        <span class="bank-info-value">{{ bank.bank_name }}</span>
-                    </div>
-                    <div class="bank-info-row">
-                        <span class="bank-info-label">Account No</span>
-                        <span class="bank-info-value font-mono" style="letter-spacing: 1px;">{{ bank.account_number }}</span>
-                    </div>
-                    <div class="bank-info-row">
-                        <span class="bank-info-label">IFSC Code</span>
-                        <span class="bank-info-value font-mono">{{ bank.ifsc }}</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="summary-box">
-                <table class="summary-table">
+                </td>
+                <td class="bottom-right">
+                    <div class="summary-box">
+                        <table class="summary-table">
                     {% if invoice.subtotal %}
                     <tr>
                         <td class="summary-label">Subtotal</td>
@@ -452,15 +514,17 @@
                     {% endif %}
                     
                     <tr>
-                        <td class="grand-total-label" style="font-size: 14px; color: var(--brand-orange);">Balance Due</td>
-                        <td class="grand-total-value" style="font-size: 18px; color: var(--brand-orange);">{{ invoice.pending_amount }}</td>
+                        <td class="grand-total-label" style="font-size: 14px; color: #FF6B6B;">Balance Due</td>
+                        <td class="grand-total-value" style="font-size: 18px; color: #FF6B6B;">{{ invoice.pending_amount }}</td>
                     </tr>
-                </table>
-            </div>
-        </div>
+                        </table>
+                    </div>
+                </td>
+            </tr>
+        </table>
 
         <div class="terms-section">
-            <div style="font-weight: 700; color: var(--slate-900); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px;">Terms & Conditions</div>
+            <div style="font-weight: 700; color: #0F172A; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px;">Terms & Conditions</div>
             <p style="margin: 0;">
                 1. Please quote Invoice Number when making payments.<br>
                 2. Payments are due within the timeframe specified in the payment terms.<br>
@@ -469,9 +533,6 @@
             </p>
         </div>
         
-        <div style="text-align: center; margin-top: 30px; color: var(--slate-100); font-family: 'Outfit'; font-weight: 800; font-size: 50px; opacity: 0.5; pointer-events: none;">
-            THANK YOU
-        </div>
     </div>
 </div>
 

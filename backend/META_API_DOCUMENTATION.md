@@ -1,4 +1,11 @@
 # Meta Module API Documentation
+msym2 remmmm
+run pacman -Syu in mingw64
+
+then
+
+pacman -S mingw-w64-x86_64-gtk3 mingw-w64-x86_64-pango mingw-w64-x86_64-harfbuzz mingw-w64-x86_64-gdk-pixbuf2 mingw-w64-x86_64-cairo
+
 
 ## Testing Prerequisites
 

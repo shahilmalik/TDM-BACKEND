@@ -264,6 +264,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [invoiceView, setInvoiceView] = useState<"list" | "create">("list");
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string>("All");
+  const [invoiceClientFilter, setInvoiceClientFilter] = useState<string>("All");
   const [invoiceDateRange, setInvoiceDateRange] = useState({
     start: "",
     end: "",
@@ -1316,13 +1317,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Paid":
-        return "bg-emerald-100 text-emerald-700";
+        return "bg-green-50 text-green-600 border-green-200";
       case "Partially Paid":
-        return "bg-amber-100 text-amber-700";
+        return "bg-yellow-50 text-yellow-600 border-yellow-200";
       case "Overdue":
-        return "bg-red-100 text-red-700";
+        return "bg-red-50 text-red-600 border-red-200";
+      case "Cancelled":
+        return "bg-slate-50 text-slate-600 border-slate-200";
       default:
-        return "bg-slate-100 text-slate-700";
+        return "bg-slate-50 text-slate-600 border-slate-200";
     }
   };
 
@@ -1337,9 +1340,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const filteredInvoices = invoices.filter((inv) =>
-    inv.clientName.toLowerCase().includes(invoiceSearch.toLowerCase())
-  );
+  const parseDateMs = (value?: string | null) => {
+    if (!value) return null;
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? null : ms;
+  };
+
+  const invoiceClientOptions = Array.from(
+    new Set(
+      invoices
+        .map((inv) => (inv.clientName || "").trim())
+        .filter((name) => Boolean(name))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const invoiceStatusOptions = Array.from(
+    new Set(
+      invoices
+        .map((inv) => (inv.status || "").trim())
+        .filter((s) => Boolean(s))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const filteredInvoices = invoices.filter((inv) => {
+    const searchOk = inv.clientName
+      .toLowerCase()
+      .includes(invoiceSearch.toLowerCase());
+
+    const statusOk =
+      invoiceStatusFilter === "All" || inv.status === invoiceStatusFilter;
+
+    const clientOk =
+      invoiceClientFilter === "All" || inv.clientName === invoiceClientFilter;
+
+    const invoiceDateMs = parseDateMs(inv.date);
+    const startMs = parseDateMs(invoiceDateRange.start);
+    const endMs = parseDateMs(invoiceDateRange.end);
+
+    const dateOk = (() => {
+      if (!startMs && !endMs) return true;
+      if (invoiceDateMs === null) return false;
+      if (startMs && invoiceDateMs < startMs) return false;
+      if (endMs && invoiceDateMs > endMs) return false;
+      return true;
+    })();
+
+    return searchOk && statusOk && clientOk && dateOk;
+  });
   const filteredServices = services.filter(
     (srv) => categoryFilter === "All" || srv.category?.name === categoryFilter
   );
@@ -1659,63 +1706,81 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="divide-y divide-slate-100">
-                {clients
-                  .filter(
-                    (c) =>
-                      (clientFilter === "all" ||
-                        (clientFilter === "active"
-                          ? c.isActive
-                          : !c.isActive)) &&
-                      `${c.businessName} ${c.contactName} ${c.email}`
-                        .toLowerCase()
-                        .includes(clientSearch.toLowerCase())
-                  )
-                  .map((c) => (
-                    <div
-                      key={c.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => openClientDetail(c.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          openClientDetail(c.id);
-                        }
-                      }}
-                      className="p-5 flex items-start justify-between gap-4 cursor-pointer hover:bg-slate-50/70 transition-colors"
-                    >
-                      <div className="min-w-0">
-                        <div className="font-bold text-slate-900 truncate">
+            <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b">
+                  <tr>
+                    <th className="px-6 py-4 font-bold text-slate-600">Business</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Contact</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Email</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Phone</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Status</th>
+                    <th className="px-6 py-4 font-bold text-slate-600 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {clients
+                    .filter(
+                      (c) =>
+                        (clientFilter === "all" ||
+                          (clientFilter === "active"
+                            ? c.isActive
+                            : !c.isActive)) &&
+                        `${c.businessName} ${c.contactName} ${c.email}`
+                          .toLowerCase()
+                          .includes(clientSearch.toLowerCase())
+                    )
+                    .map((c) => (
+                      <tr
+                        key={c.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openClientDetail(c.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openClientDetail(c.id);
+                          }
+                        }}
+                        className="hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <td className="px-6 py-4 font-bold text-slate-800">
                           {c.businessName}
-                        </div>
-                        <div className="text-sm text-slate-500 truncate">
-                          {c.contactName}
-                        </div>
-                        <div className="mt-2 text-xs text-slate-500 flex flex-wrap gap-3">
-                          <span className="inline-flex items-center gap-1">
-                            <Mail size={14} /> {c.email || "—"}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Phone size={14} /> {c.phone || "—"}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <ShieldCheck size={14} />
+                        </td>
+                        <td className="px-6 py-4 text-slate-800">
+                          {c.contactName || "—"}
+                        </td>
+                        <td className="px-6 py-4 text-slate-800">
+                          {c.email || "—"}
+                        </td>
+                        <td className="px-6 py-4 text-slate-800">
+                          {c.phone || "—"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                              c.isActive
+                                ? "bg-green-50 text-green-600 border-green-200"
+                                : "bg-slate-50 text-slate-600 border-slate-200"
+                            }`}
+                          >
                             {c.isActive ? "Active" : "Inactive"}
                           </span>
-                        </div>
-                      </div>
-                      <ChevronRight className="text-slate-300 flex-shrink-0 mt-1" />
-                    </div>
-                  ))}
-                {clients.length === 0 && (
-                  <div className="p-12 text-center text-slate-400">
-                    <UserCircle size={44} className="mx-auto mb-3 opacity-40" />
-                    No clients yet.
-                  </div>
-                )}
-              </div>
+                        </td>
+                        <td className="px-6 py-4 text-right font-bold text-sm text-[#6C5CE7] hover:underline">
+                          View <ChevronRight size={16} className="inline ml-1" />
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+
+              {clients.length === 0 && (
+                <div className="p-12 text-center text-slate-400">
+                  <UserCircle size={44} className="mx-auto mb-3 opacity-40" />
+                  No clients yet.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1780,52 +1845,60 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </select>
             </div>
 
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="divide-y divide-slate-100">
-                {filteredServices.map((srv) => (
-                  <div
-                    key={srv.id}
-                    className="p-5 flex items-start justify-between gap-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 truncate">
+            <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b">
+                  <tr>
+                    <th className="px-6 py-4 font-bold text-slate-600">Service</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Category</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Service ID</th>
+                    <th className="px-6 py-4 font-bold text-slate-600 text-right">Price</th>
+                    <th className="px-6 py-4 font-bold text-slate-600 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredServices.map((srv) => (
+                    <tr
+                      key={srv.id}
+                      className="hover:bg-slate-50 transition-colors"
+                    >
+                      <td className="px-6 py-4 font-bold text-slate-800">
                         {srv.name}
-                      </div>
-                      <div className="text-sm text-slate-500 truncate">
+                      </td>
+                      <td className="px-6 py-4 text-slate-800">
                         {srv.category?.name || "—"}
-                      </div>
-                      <div className="mt-2 text-xs text-slate-500 flex flex-wrap gap-3">
-                        <span className="inline-flex items-center gap-1">
-                          <Tag size={14} /> {srv.service_id}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <DollarSign size={14} /> {srv.price}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => handleEditService(srv)}
-                        className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
-                      >
-                        <Edit2 size={16} /> Edit
-                      </button>
-                      <button
-                        onClick={() => deleteService(srv.id)}
-                        className="px-3 py-2 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1"
-                      >
-                        <Trash2 size={16} /> Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {services.length === 0 && (
-                  <div className="p-12 text-center text-slate-400">
-                    <Briefcase size={44} className="mx-auto mb-3 opacity-40" />
-                    No services yet.
-                  </div>
-                )}
-              </div>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-sm text-slate-500">
+                        {srv.service_id}
+                      </td>
+                      <td className="px-6 py-4 text-right text-slate-800 font-bold">
+                        ₹{Number(srv.price || 0).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => handleEditService(srv)}
+                          className="font-bold text-sm text-[#6C5CE7] hover:underline mr-4"
+                        >
+                          <Edit2 size={16} className="inline mr-1" /> Edit
+                        </button>
+                        <button
+                          onClick={() => deleteService(srv.id)}
+                          className="font-bold text-sm text-red-600 hover:underline"
+                        >
+                          <Trash2 size={16} className="inline mr-1" /> Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {services.length === 0 && (
+                <div className="p-12 text-center text-slate-400">
+                  <Briefcase size={44} className="mx-auto mb-3 opacity-40" />
+                  No services yet.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1848,52 +1921,60 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
 
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="divide-y divide-slate-100">
-                {employees.map((e) => (
-                  <div
-                    key={e.id}
-                    className="p-5 flex items-start justify-between gap-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 truncate">
+            <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b">
+                  <tr>
+                    <th className="px-6 py-4 font-bold text-slate-600">Name</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Role</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Email</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Phone</th>
+                    <th className="px-6 py-4 font-bold text-slate-600 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {employees.map((e) => (
+                    <tr
+                      key={e.id}
+                      className="hover:bg-slate-50 transition-colors"
+                    >
+                      <td className="px-6 py-4 font-bold text-slate-800">
                         {e.name}
-                      </div>
-                      <div className="text-sm text-slate-500 truncate">
-                        {e.role}
-                      </div>
-                      <div className="mt-2 text-xs text-slate-500 flex flex-wrap gap-3">
-                        <span className="inline-flex items-center gap-1">
-                          <Mail size={14} /> {e.email || "—"}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Phone size={14} /> {e.phone || "—"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => openEditEmployeeModal(e)}
-                        className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
-                      >
-                        <Edit2 size={16} /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteEmployee(e.id)}
-                        className="px-3 py-2 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1"
-                      >
-                        <Trash2 size={16} /> Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {employees.length === 0 && (
-                  <div className="p-12 text-center text-slate-400">
-                    <Users size={44} className="mx-auto mb-3 opacity-40" />
-                    No employees yet.
-                  </div>
-                )}
-              </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-800">
+                        {e.role || "—"}
+                      </td>
+                      <td className="px-6 py-4 text-slate-800">
+                        {e.email || "—"}
+                      </td>
+                      <td className="px-6 py-4 text-slate-800">
+                        {e.phone || "—"}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => openEditEmployeeModal(e)}
+                          className="font-bold text-sm text-[#6C5CE7] hover:underline mr-4"
+                        >
+                          <Edit2 size={16} className="inline mr-1" /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEmployee(e.id)}
+                          className="font-bold text-sm text-red-600 hover:underline"
+                        >
+                          <Trash2 size={16} className="inline mr-1" /> Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {employees.length === 0 && (
+                <div className="p-12 text-center text-slate-400">
+                  <Users size={44} className="mx-auto mb-3 opacity-40" />
+                  No employees yet.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1929,8 +2010,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {invoiceView === "list" ? (
               <>
-                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 flex flex-col md:flex-row md:items-center gap-3 justify-between">
-                  <div className="relative flex-1">
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 space-y-3">
+                  <div className="relative">
                     <Search
                       className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                       size={18}
@@ -1942,108 +2023,182 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
                     />
                   </div>
-                  <button
-                    onClick={handleBulkDownload}
-                    className="bg-white border border-slate-200 text-slate-700 px-5 py-3 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
-                  >
-                    <Download size={18} /> Bulk Download
-                  </button>
+
+                  <div className="flex flex-col md:flex-row md:items-center gap-3 justify-between">
+                    <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1">
+                      <select
+                        value={invoiceStatusFilter}
+                        onChange={(e) => setInvoiceStatusFilter(e.target.value)}
+                        className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                      >
+                        <option value="All">All Status</option>
+                        {invoiceStatusOptions.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={invoiceClientFilter}
+                        onChange={(e) => setInvoiceClientFilter(e.target.value)}
+                        className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                      >
+                        <option value="All">All Clients</option>
+                        {invoiceClientOptions.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={invoiceDateRange.start}
+                          onChange={(e) =>
+                            setInvoiceDateRange((p) => ({
+                              ...p,
+                              start: e.target.value,
+                            }))
+                          }
+                          className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                        />
+                        <span className="text-slate-400 text-sm">to</span>
+                        <input
+                          type="date"
+                          value={invoiceDateRange.end}
+                          onChange={(e) =>
+                            setInvoiceDateRange((p) => ({
+                              ...p,
+                              end: e.target.value,
+                            }))
+                          }
+                          className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {selectedInvoiceIds.length > 0 && (
+                      <button
+                        onClick={handleBulkDownload}
+                        className="bg-white border border-slate-200 text-slate-700 px-5 py-3 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
+                      >
+                        <Download size={18} /> Bulk Download (
+                        {selectedInvoiceIds.length})
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="divide-y divide-slate-100">
-                    {filteredInvoices.map((inv) => (
-                      <div
-                        key={inv.id}
-                        className="p-5 flex items-start justify-between gap-4"
-                      >
-                        <div className="flex items-start gap-3">
-                          <button
-                            onClick={() => toggleInvoiceSelection(inv.id)}
-                            className="mt-1 text-slate-500 hover:text-slate-700"
-                            title="Select"
-                          >
-                            {selectedInvoiceIds.includes(inv.id) ? (
-                              <CheckSquare size={20} />
-                            ) : (
-                              <Square size={20} />
-                            )}
-                          </button>
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-900 truncate">
-                              {inv.invoiceNumber} — {inv.clientName}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500 flex flex-wrap gap-3">
-                              <span className="inline-flex items-center gap-1">
-                                <Calendar size={14} /> {inv.date}
-                              </span>
-                              <span className="inline-flex items-center gap-1">
-                                <Calendar size={14} /> Start:{" "}
-                                {inv.startDate || "—"}
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${getStatusColor(
-                                  inv.status
-                                )}`}
-                              >
-                                {inv.status}
-                              </span>
-                              <span className="inline-flex items-center gap-1">
-                                <DollarSign size={14} /> {inv.grandTotal}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {inv.status !== "Paid" &&
-                            inv.status !== "Cancelled" && (
+                <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b">
+                      <tr>
+                        <th className="px-6 py-4 font-bold text-slate-600">Select</th>
+                        <th className="px-6 py-4 font-bold text-slate-600">Invoice ID</th>
+                        <th className="px-6 py-4 font-bold text-slate-600">Client</th>
+                        <th className="px-6 py-4 font-bold text-slate-600">Date</th>
+                        <th className="px-6 py-4 font-bold text-slate-600">Status</th>
+                        <th className="px-6 py-4 font-bold text-slate-600 text-right">Amount</th>
+                        <th className="px-6 py-4 font-bold text-slate-600 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filteredInvoices.map((inv) => (
+                        <tr
+                          key={inv.id}
+                          className="hover:bg-slate-50 transition-colors"
+                        >
+                          <td className="px-6 py-4">
+                            <button
+                              onClick={() => toggleInvoiceSelection(inv.id)}
+                              className="text-slate-500 hover:text-slate-700"
+                              title="Select"
+                            >
+                              {selectedInvoiceIds.includes(inv.id) ? (
+                                <CheckSquare size={18} />
+                              ) : (
+                                <Square size={18} />
+                              )}
+                            </button>
+                          </td>
+                          <td className="px-6 py-4 font-mono text-sm text-slate-500">
+                            {inv.invoiceNumber}
+                          </td>
+                          <td className="px-6 py-4 text-slate-800 font-medium">
+                            {inv.clientName}
+                          </td>
+                          <td className="px-6 py-4 text-slate-800">
+                            {inv.date}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(
+                                inv.status
+                              )}`}
+                            >
+                              {inv.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-slate-800 font-bold text-right">
+                            ₹{Number(inv.grandTotal || 0).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            {inv.status !== "Paid" &&
+                              inv.status !== "Cancelled" && (
+                                <button
+                                  onClick={() => openRecordPaymentModal(inv)}
+                                  className="font-bold text-sm text-slate-700 hover:underline mr-4"
+                                >
+                                  <PaymentIcon size={16} className="inline mr-1" />
+                                  Pay
+                                </button>
+                              )}
+
+                            {inv.status === "Paid" && inv.hasPipeline && (
                               <button
-                                onClick={() => openRecordPaymentModal(inv)}
-                                className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
+                                onClick={() => handleStartPipeline(inv)}
+                                title="Start pipeline"
+                                className="font-bold text-sm text-slate-700 hover:underline mr-4"
                               >
-                                <PaymentIcon size={16} /> Record Payment
+                                <Play size={16} className="inline mr-1" /> Start
                               </button>
                             )}
 
-                          {inv.status === "Paid" && inv.hasPipeline && (
                             <button
-                              onClick={() => handleStartPipeline(inv)}
-                              title="Start pipeline"
-                              className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
+                              onClick={() => handlePreviewInvoice(Number(inv.id))}
+                              className="font-bold text-sm text-[#6C5CE7] hover:underline mr-4"
                             >
-                              <Play size={16} /> Start
+                              <Eye size={16} className="inline mr-1" /> Preview
                             </button>
-                          )}
-                          <button
-                            onClick={() => handlePreviewInvoice(Number(inv.id))}
-                            className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
-                          >
-                            <Eye size={16} /> Preview
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleDownloadInvoice(
-                                Number(inv.id),
-                                inv.invoiceNumber
-                              )
-                            }
-                            className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
-                          >
-                            <Download size={16} /> PDF
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {filteredInvoices.length === 0 && (
-                      <div className="p-12 text-center text-slate-400">
-                        <FileSpreadsheet
-                          size={44}
-                          className="mx-auto mb-3 opacity-40"
-                        />
-                        No invoices.
-                      </div>
-                    )}
-                  </div>
+
+                            <button
+                              onClick={() =>
+                                handleDownloadInvoice(
+                                  Number(inv.id),
+                                  inv.invoiceNumber
+                                )
+                              }
+                              className="font-bold text-sm text-[#6C5CE7] hover:underline"
+                            >
+                              <Download size={16} className="inline mr-1" /> PDF
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {filteredInvoices.length === 0 && (
+                    <div className="p-12 text-center text-slate-400">
+                      <FileSpreadsheet
+                        size={44}
+                        className="mx-auto mb-3 opacity-40"
+                      />
+                      No invoices.
+                    </div>
+                  )}
                 </div>
               </>
             ) : (

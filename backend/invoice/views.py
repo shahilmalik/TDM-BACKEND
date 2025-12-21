@@ -5,11 +5,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.template.loader import render_to_string
 from django.http import HttpResponse
-from xhtml2pdf import pisa
-from io import BytesIO
+from django.conf import settings
 from .utils import render_invoice_html, build_invoice_context
 
-from .models import Invoice, PaymentMode, PaymentTerm, BusinessInfo, Payment
+from .models import Invoice, PaymentMode, PaymentTerm, BusinessInfo, Payment, INVOICE_STATUS
 from core.models import CustomUser, ClientProfile
 from .serializers import InvoiceSerializer, PaymentModeSerializer, PaymentTermSerializer, BusinessInfoSerializer, PaymentSerializer
 from core.permissions import IsOwnerOrAdmin
@@ -36,6 +35,34 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             queryset = self.get_queryset().filter(client=request.user)
         else:
             queryset = self.get_queryset()
+
+        # Filters (backend-driven)
+        status_value = request.query_params.get('status') or None
+        client_id = request.query_params.get('client_id') or request.query_params.get('client') or None
+        start_date = request.query_params.get('start_date') or request.query_params.get('date_start') or None
+        end_date = request.query_params.get('end_date') or request.query_params.get('date_end') or None
+
+        if status_value and status_value != 'All':
+            queryset = queryset.filter(status=status_value)
+
+        # Only allow staff to filter by arbitrary client.
+        if client_id and client_id != 'All' and request.user.type != 'client':
+            try:
+                queryset = queryset.filter(client_id=int(client_id))
+            except Exception:
+                pass
+
+        if start_date:
+            try:
+                queryset = queryset.filter(date__gte=start_date)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                queryset = queryset.filter(date__lte=end_date)
+            except Exception:
+                pass
+
         serializer = self.get_serializer(queryset, many=True)
         return Response({"success": True, "invoices": serializer.data})
 
@@ -53,14 +80,31 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         invoice = self.get_object()
         if request.user.type == 'client' and invoice.client != request.user:
             return Response({"success": False, "error": "You don't have permission to download this invoice"}, status=status.HTTP_403_FORBIDDEN)
-        html, _ctx = render_invoice_html(invoice)
-        buffer = BytesIO()
-        pisa_status = pisa.CreatePDF(html, dest=buffer)
-        if pisa_status.err:
-            return Response({"success": False, "errors": {"error": "PDF generation failed"}}, status=500)
 
-        buffer.seek(0)
-        response = HttpResponse(buffer, content_type='application/pdf')
+        html = render_invoice_html(invoice, request=request, template_name='invoice.html')
+
+        # base_url is important so relative URLs (if any) resolve correctly.
+        base_url = request.build_absolute_uri('/') if request is not None else str(settings.BASE_DIR)
+        try:
+            from weasyprint import HTML
+
+            pdf_bytes = HTML(string=html, base_url=base_url).write_pdf()
+        except Exception:
+            return Response(
+                {
+                    "success": False,
+                    "errors": {
+                        "error": (
+                            "PDF generation failed. If you are on Windows, WeasyPrint "
+                            "requires GTK/Pango libraries (libgobject-2.0-0, pango, etc.) "
+                            "to be installed and available on PATH."
+                        )
+                    },
+                },
+                status=500,
+            )
+
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename=invoice_{invoice.invoice_id}.pdf'
         return response
 
@@ -70,7 +114,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         invoice = self.get_object()
         if request.user.type == 'client' and invoice.client != request.user:
             return Response({"success": False, "error": "You don't have permission to preview this invoice"}, status=status.HTTP_403_FORBIDDEN)
-        html, context = render_invoice_html(invoice)
+        html = render_invoice_html(invoice, request=request, template_name='invoice.html')
         return Response({
             'id': invoice.id,
             'html': html,
@@ -190,6 +234,18 @@ class ClientsDropdownView(APIView):
             if not name:
                 name = f"{u.first_name or ''} {u.last_name or ''}".strip() or u.email or str(u.id)
             data.append({'id': u.id, 'name': name})
+        return Response(data)
+
+
+class InvoiceStatusesDropdownView(APIView):
+    """Return invoice status choices as value+label.
+
+    value: stored DB value (first tuple element)
+    label: human-readable label (second tuple element)
+    """
+
+    def get(self, request):
+        data = [{'value': v, 'label': label} for (v, label) in INVOICE_STATUS]
         return Response(data)
 
 
