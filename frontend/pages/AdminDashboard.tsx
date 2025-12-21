@@ -88,131 +88,6 @@ const PIPELINE_COLUMNS: { id: PipelineStatus; label: string; color: string }[] =
     { id: "posted", label: "Posted", color: "border-slate-800" },
   ];
 
-const MOCK_PIPELINE_CLIENT_ID = "__mock__";
-const MOCK_PIPELINE_POSTS: PipelinePost[] = [
-  {
-    id: "mock-backlog",
-    title: "idea-01 | New Year Campaign Theme",
-    platform: "all",
-    platforms: ["instagram", "facebook", "linkedin", "twitter"],
-    status: "backlog",
-    dueDate: "2025-12-24",
-    priority: "medium",
-    description:
-      "Brainstorm 3 creative directions + hooks for New Year campaign posts.",
-    location: "Dubai, UAE",
-    hashtags: ["#NewYear", "#Campaign"],
-    client: { first_name: "Demo", last_name: "Client" },
-    assigned_to: { first_name: "Ayesha", last_name: "Strategist" },
-  },
-  {
-    id: "mock-writing",
-    title: "poster-08 | Winter Sale Announcement",
-    platform: "instagram",
-    platforms: ["instagram", "facebook"],
-    status: "writing",
-    dueDate: "2025-12-26",
-    priority: "high",
-    description:
-      "Create a winter sale post highlighting 30% off. Keep copy short and bold.",
-    caption:
-      "Winter Sale is live! Get up to 30% off on selected services. Limited time only.",
-    hashtags: ["#WinterSale", "#LimitedTime", "#BrandName"],
-    location: "Karachi, PK",
-    client: { first_name: "Demo", last_name: "Client" },
-    assigned_to: { first_name: "John", last_name: "Writer" },
-  },
-  {
-    id: "mock-design",
-    title: "carousel-02 | Before/After Results",
-    platform: "linkedin",
-    platforms: ["linkedin"],
-    status: "design",
-    dueDate: "2025-12-27",
-    priority: "medium",
-    description:
-      "Design a 4-slide carousel showing before/after impact and a short CTA.",
-    location: "Lahore, PK",
-    hashtags: ["#CaseStudy", "#Growth", "#Marketing"],
-    client: { first_name: "Demo", last_name: "Client" },
-    assigned_to: { first_name: "Sara", last_name: "Dev" },
-  },
-  {
-    id: "mock-review",
-    title: "review-01 | Copy & CTA Final Check",
-    platform: "facebook",
-    platforms: ["facebook"],
-    status: "review",
-    dueDate: "2025-12-28",
-    priority: "low",
-    description:
-      "Internal review: tone, grammar, CTA strength, and brand consistency.",
-    location: "Islamabad, PK",
-    hashtags: ["#BrandVoice"],
-    client: { first_name: "Demo", last_name: "Client" },
-    assigned_to: { first_name: "Bilal", last_name: "Editor" },
-  },
-  {
-    id: "mock-approval",
-    title: "reel-01 | Behind the scenes",
-    platform: "instagram",
-    platforms: ["instagram"],
-    status: "approval",
-    dueDate: "2025-12-29",
-    priority: "low",
-    description:
-      "Client approval needed for the final caption and CTA.",
-    location: "Abu Dhabi, UAE",
-    client: { first_name: "Demo", last_name: "Client" },
-    assigned_to: { first_name: "Sara", last_name: "Dev" },
-  },
-  {
-    id: "mock-finalized",
-    title: "final-01 | Export + Upload Assets",
-    platform: "instagram",
-    platforms: ["instagram"],
-    status: "finalized",
-    dueDate: "2025-12-30",
-    priority: "medium",
-    description:
-      "Finalize exports (1080x1350, 1080x1920) and attach captions.",
-    location: "Sharjah, UAE",
-    hashtags: ["#ReadyToPost"],
-    client: { first_name: "Demo", last_name: "Client" },
-    assigned_to: { first_name: "Hira", last_name: "Designer" },
-  },
-  {
-    id: "mock-scheduled",
-    title: "schedule-01 | Queue in Meta Business Suite",
-    platform: "facebook",
-    platforms: ["facebook", "instagram"],
-    status: "scheduled",
-    dueDate: "2025-12-31",
-    priority: "low",
-    description:
-      "Schedule for 6:30 PM local time. Verify link tracking.",
-    location: "Doha, QA",
-    hashtags: ["#Scheduled"],
-    client: { first_name: "Demo", last_name: "Client" },
-    assigned_to: { first_name: "Nida", last_name: "Manager" },
-  },
-  {
-    id: "mock-posted",
-    title: "posted-01 | Engagement Monitoring",
-    platform: "twitter",
-    platforms: ["twitter"],
-    status: "posted",
-    dueDate: "2026-01-01",
-    priority: "low",
-    description:
-      "Monitor comments for 24h and respond to FAQs.",
-    location: "Riyadh, SA",
-    hashtags: ["#Community"],
-    client: { first_name: "Demo", last_name: "Client" },
-    assigned_to: { first_name: "Umar", last_name: "Support" },
-  },
-];
-
 interface AdminDashboardProps {
   onLogout: () => void;
   onNavigate?: (page: string, subPage?: string) => void;
@@ -438,9 +313,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Pipeline Data
   const [pipelineData, setPipelineData] = useState<
     Record<string, PipelinePost[]>
-  >({
-    [MOCK_PIPELINE_CLIENT_ID]: MOCK_PIPELINE_POSTS,
-  });
+  >({});
 
   // --- STATE MANAGEMENT ---
 
@@ -1156,6 +1029,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           platform: item.platforms?.[0] || "instagram",
           platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
           priority: item.priority || undefined,
+          unread_comments_count: Number(item.unread_comments_count ?? 0),
           status: mapBackendColumnToStatus(item.column),
           dueDate: item.due_date || "",
           creative_copy: item.creative_copy || "",
@@ -1187,7 +1061,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       setPipelineData({
         ...grouped,
-        [MOCK_PIPELINE_CLIENT_ID]: MOCK_PIPELINE_POSTS,
       });
     } catch (e) {
       console.error("Failed to fetch pipeline", e);
@@ -1199,7 +1072,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     scheduledAtIso: string
   ) => {
     if (!selectedPipelineClient) return;
-    if (selectedPipelineClient === MOCK_PIPELINE_CLIENT_ID) return;
 
     setPipelineData((prev) => {
       const next = { ...prev };
@@ -2206,15 +2078,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ),
     }));
 
-    if (selectedPipelineClient !== MOCK_PIPELINE_CLIENT_ID) {
-      try {
-        await api.kanban.move(
-          Number(draggedPostId),
-          mapStatusToBackendColumn(status)
-        );
-      } catch (e) {
-        console.error("Failed to move item", e);
-      }
+    try {
+      await api.kanban.move(
+        Number(draggedPostId),
+        mapStatusToBackendColumn(status)
+      );
+    } catch (e) {
+      console.error("Failed to move item", e);
     }
 
     setDraggedPostId(null);
@@ -2358,9 +2228,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onChange={(e) => setSelectedPipelineClient(e.target.value)}
                 >
                   <option value="">-- Select Client --</option>
-                  <option value={MOCK_PIPELINE_CLIENT_ID}>
-                    Demo Client (Mock)
-                  </option>
                   {clients.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.businessName}

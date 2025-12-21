@@ -60,48 +60,11 @@ const ContentItem: React.FC<ContentItemProps> = ({
         ? post.comments
         : []) || [];
 
-  const [comments, setComments] = useState<Comment[]>(
-    seedComments.length
-      ? seedComments
-      : [
-          {
-            id: "1",
-            author: "Sara Dev",
-            role: "agency",
-            text: "Does the color palette match the summer vibe?",
-            date: "2 hours ago",
-            replies: [
-              {
-                id: "2",
-                author: "Ali Khan",
-                role: "client",
-                text: "Yes, but can we make the logo slightly larger?",
-                date: "1 hour ago",
-              },
-            ],
-          },
-        ]
+  const [comments, setComments] = useState<Comment[]>(seedComments);
+
+  const [history, setHistory] = useState<HistoryEntry[]>(
+    post.history && post.history.length ? post.history : []
   );
-
-  const seedHistory: HistoryEntry[] =
-    post.history && post.history.length
-      ? post.history
-      : [
-          {
-            id: "h1",
-            user: "John Writer",
-            action: "Created the content draft",
-            timestamp: "3 hours ago",
-          },
-          {
-            id: "h2",
-            user: "Sara Dev",
-            action: "Updated status to Content Writing",
-            timestamp: "2.5 hours ago",
-          },
-        ];
-
-  const [history, setHistory] = useState<HistoryEntry[]>(seedHistory);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
@@ -223,12 +186,12 @@ const ContentItem: React.FC<ContentItemProps> = ({
       } else if (post.history && post.history.length) {
         setHistory(post.history);
       } else {
-        setHistory(seedHistory);
+        setHistory([]);
       }
     } catch (e: any) {
       setHistoryError(e?.message || "Failed to load activity history.");
       if (post.history && post.history.length) setHistory(post.history);
-      else setHistory(seedHistory);
+      else setHistory([]);
     } finally {
       setIsHistoryLoading(false);
     }
@@ -284,34 +247,21 @@ const ContentItem: React.FC<ContentItemProps> = ({
     if (!commentInput.trim()) return;
 
     const submit = async () => {
-      // If we have a real backend item, persist
-      if (postIdForApi) {
-        setIsDiscussionLoading(true);
-        setDiscussionError(null);
-        try {
-          await api.kanban.comments.create(postIdForApi, commentInput.trim());
-          setCommentInput("");
-          setReplyingToId(null);
-          setReplyInput("");
-          await loadDiscussion();
-          return;
-        } catch (e: any) {
-          setDiscussionError(e?.message || "Failed to add comment.");
-        } finally {
-          setIsDiscussionLoading(false);
-        }
+      if (!postIdForApi) return;
+      setIsDiscussionLoading(true);
+      setDiscussionError(null);
+      try {
+        await api.kanban.comments.create(postIdForApi, commentInput.trim());
+        setCommentInput("");
+        setReplyingToId(null);
+        setReplyInput("");
+        await loadDiscussion();
+        return;
+      } catch (e: any) {
+        setDiscussionError(e?.message || "Failed to add comment.");
+      } finally {
+        setIsDiscussionLoading(false);
       }
-
-      // Fallback to local mock
-      const newMsg: Comment = {
-        id: Date.now().toString(),
-        author: isAdmin ? "Agency Admin" : "Client User",
-        role: isAdmin ? "agency" : "client",
-        text: commentInput,
-        date: "Just now",
-      };
-      setComments([...comments, newMsg]);
-      setCommentInput("");
     };
 
     // fire and forget
@@ -321,29 +271,7 @@ const ContentItem: React.FC<ContentItemProps> = ({
   const handleReply = async (parentComment: Comment) => {
     if (!replyInput.trim()) return;
     if (parentComment.replies && parentComment.replies.length > 0) return;
-    if (!postIdForApi) {
-      // local mock
-      setComments((prev) =>
-        prev.map((c) => {
-          if (String(c.id) !== String(parentComment.id)) return c;
-          return {
-            ...c,
-            replies: [
-              {
-                id: Date.now().toString(),
-                author: isAdmin ? "Agency Admin" : "Client User",
-                role: isAdmin ? "agency" : "client",
-                text: replyInput.trim(),
-                date: "Just now",
-              },
-            ],
-          };
-        })
-      );
-      setReplyInput("");
-      setReplyingToId(null);
-      return;
-    }
+    if (!postIdForApi) return;
 
     setIsDiscussionLoading(true);
     setDiscussionError(null);
