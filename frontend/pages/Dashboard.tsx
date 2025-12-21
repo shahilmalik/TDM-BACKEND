@@ -47,6 +47,8 @@ import {
   Phone,
   MapPin,
   Smartphone,
+  Square,
+  CheckSquare,
 } from "lucide-react";
 import {
   UserSubscription,
@@ -146,6 +148,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
   const [metaError, setMetaError] = useState<string | null>(null);
   const [isInstagramLoading, setIsInstagramLoading] = useState(false);
   const [instagramError, setInstagramError] = useState<string | null>(null);
+
+  // Billing / Invoices UI state
+  const [billingDateRange, setBillingDateRange] = useState({
+    start: "",
+    end: "",
+  });
+  const [billingSelectedInvoiceIds, setBillingSelectedInvoiceIds] = useState<
+    string[]
+  >([]);
+  const [billingInvoicesLoading, setBillingInvoicesLoading] = useState(false);
+
+  const [billingPreviewData, setBillingPreviewData] = useState<{
+    id: number | string;
+    html: string;
+  } | null>(null);
+  const [isBillingPreviewOpen, setIsBillingPreviewOpen] = useState(false);
 
   // Filters for Insights
   const [insightMonth, setInsightMonth] = useState("12");
@@ -302,23 +320,44 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
             return;
           }
 
-          const response: any = await api.invoice.list();
-          const fetchedInvoices = response.invoices || [];
-          setInvoices(
-            fetchedInvoices.map((inv: any) => ({
-              id: inv.id,
-              invoice_id: inv.invoice_id,
-              date: inv.date,
-              amount: inv.total_amount ? parseFloat(inv.total_amount) : 0,
-              status: inv.status
-                ? inv.status.charAt(0).toUpperCase() + inv.status.slice(1)
-                : "Pending",
-              service:
-                inv.items && inv.items.length > 0
-                  ? inv.items[0].service_name
-                  : "General Service",
-            }))
-          );
+          // Initial invoices load (Billing tab can re-fetch with date range)
+          try {
+            const response: any = await api.invoice.list({
+              page: 1,
+              page_size: 1000,
+            });
+            const fetchedInvoices =
+              (response?.results || response?.invoices || response) ?? [];
+            const list = Array.isArray(fetchedInvoices) ? fetchedInvoices : [];
+
+            setInvoices(
+              list.map((inv: any) => {
+                let amount = inv.total_amount ? parseFloat(inv.total_amount) : 0;
+                if ((!amount || amount === 0) && Array.isArray(inv.items)) {
+                  amount = inv.items.reduce(
+                    (acc: number, it: any) =>
+                      acc + parseFloat(it?.line_total || 0),
+                    0
+                  );
+                }
+
+                return {
+                  id: inv.id,
+                  invoice_id: inv.invoice_id,
+                  date: inv.date,
+                  amount,
+                  // IMPORTANT: use backend status code (choice tuple first value)
+                  status: inv.status || "unknown",
+                  service:
+                    inv.items && inv.items.length > 0
+                      ? inv.items[0].service_name
+                      : "General Service",
+                };
+              })
+            );
+          } catch (e) {
+            // keep dashboard usable even if invoices fail
+          }
 
           const kanbanItems = await api.kanban.list();
           setPipelinePosts(
@@ -341,6 +380,135 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
     };
     fetchData();
   }, []);
+
+  const fetchBillingInvoices = async () => {
+    if (localStorage.getItem("demoMode")) return;
+    setBillingInvoicesLoading(true);
+    try {
+      const response: any = await api.invoice.list({
+        page: 1,
+        page_size: 1000,
+        start_date: billingDateRange.start || undefined,
+        end_date: billingDateRange.end || undefined,
+      });
+
+      const fetchedInvoices =
+        (response?.results || response?.invoices || response) ?? [];
+      const list = Array.isArray(fetchedInvoices) ? fetchedInvoices : [];
+
+      setInvoices(
+        list.map((inv: any) => {
+          let amount = inv.total_amount ? parseFloat(inv.total_amount) : 0;
+          if ((!amount || amount === 0) && Array.isArray(inv.items)) {
+            amount = inv.items.reduce(
+              (acc: number, it: any) => acc + parseFloat(it?.line_total || 0),
+              0
+            );
+          }
+          return {
+            id: inv.id,
+            invoice_id: inv.invoice_id,
+            date: inv.date,
+            amount,
+            status: inv.status || "unknown",
+            service:
+              inv.items && inv.items.length > 0
+                ? inv.items[0].service_name
+                : "General Service",
+          };
+        })
+      );
+
+      // keep selection consistent with visible list
+      setBillingSelectedInvoiceIds([]);
+    } catch (e) {
+      console.error("Failed to fetch billing invoices", e);
+    } finally {
+      setBillingInvoicesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== "billing") return;
+    fetchBillingInvoices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "billing") return;
+    const t = window.setTimeout(() => {
+      fetchBillingInvoices();
+    }, 300);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billingDateRange.start, billingDateRange.end]);
+
+  const toggleBillingInvoiceSelection = (id: string) => {
+    setBillingSelectedInvoiceIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const billingVisibleInvoiceIds = invoices.map((inv) => String(inv.id));
+  const billingAllVisibleSelected =
+    billingVisibleInvoiceIds.length > 0 &&
+    billingVisibleInvoiceIds.every((id) => billingSelectedInvoiceIds.includes(id));
+
+  const toggleSelectAllBillingInvoices = () => {
+    setBillingSelectedInvoiceIds((prev) => {
+      if (billingAllVisibleSelected) {
+        return prev.filter((id) => !billingVisibleInvoiceIds.includes(id));
+      }
+      return Array.from(new Set([...prev, ...billingVisibleInvoiceIds]));
+    });
+  };
+
+  const downloadInvoicePdf = async (id: string | number, invoiceNo?: string) => {
+    try {
+      const blob = await api.invoice.downloadPdf(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${invoiceNo || `invoice-${id}`}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error(e);
+    }
+  };
+
+  const getClientInvoiceStatusLabel = (statusCode: string) => {
+    const v = String(statusCode || "").toLowerCase();
+    if (v === "partially_paid") return "Partially Paid";
+    if (v === "paid") return "Paid";
+    if (v === "cancelled") return "Cancelled";
+    if (v === "unpaid") return "Pending Payment";
+    return statusCode || "Unknown";
+  };
+
+  const openBillingInvoicePreview = async (id: string | number) => {
+    try {
+      const data = await api.invoice.preview(id);
+      setBillingPreviewData(data);
+      setIsBillingPreviewOpen(true);
+    } catch (e) {
+      console.error("Failed to preview invoice", e);
+    }
+  };
+
+  const bulkDownloadBillingInvoices = async () => {
+    if (billingSelectedInvoiceIds.length === 0) return;
+    const selected = invoices.filter((inv) =>
+      billingSelectedInvoiceIds.includes(String(inv.id))
+    );
+    for (const inv of selected) {
+      // download sequentially to avoid browser throttling
+      // eslint-disable-next-line no-await-in-loop
+      await downloadInvoicePdf(inv.id, inv.invoice_id);
+    }
+  };
 
   // When the Profile tab is selected, refresh profile data from the server
   useEffect(() => {
@@ -1173,10 +1341,73 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
             <h1 className="text-2xl font-bold text-slate-800">
               Billing History
             </h1>
+
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
+                <Calendar size={16} />
+                <span>Date Range:</span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="date"
+                  value={billingDateRange.start}
+                  onChange={(e) =>
+                    setBillingDateRange((p) => ({ ...p, start: e.target.value }))
+                  }
+                  className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                />
+                <input
+                  type="date"
+                  value={billingDateRange.end}
+                  onChange={(e) =>
+                    setBillingDateRange((p) => ({ ...p, end: e.target.value }))
+                  }
+                  className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                />
+
+                {billingSelectedInvoiceIds.length > 0 && (
+                  <button
+                    onClick={bulkDownloadBillingInvoices}
+                    className="bg-[#0F172A] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2"
+                  >
+                    <Download size={16} /> Bulk Download (
+                    {billingSelectedInvoiceIds.length})
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 border-b">
                   <tr>
+                    <th className="px-6 py-4 font-bold text-slate-600 w-[90px]">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelectAllBillingInvoices();
+                        }}
+                        className="text-slate-500 hover:text-slate-700 font-bold text-sm inline-flex items-center gap-2"
+                        aria-label={
+                          billingAllVisibleSelected
+                            ? "Unselect all invoices"
+                            : "Select all invoices"
+                        }
+                        title={
+                          billingAllVisibleSelected
+                            ? "Unselect all"
+                            : "Select all"
+                        }
+                      >
+                        {billingAllVisibleSelected ? (
+                          <CheckSquare size={18} />
+                        ) : (
+                          <Square size={18} />
+                        )}
+                        All
+                      </button>
+                    </th>
                     <th className="px-6 py-4 font-bold text-slate-600">
                       Invoice ID
                     </th>
@@ -1199,8 +1430,35 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                   {invoices.map((inv) => (
                     <tr
                       key={inv.id}
-                      className="hover:bg-slate-50 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openBillingInvoicePreview(inv.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openBillingInvoicePreview(inv.id);
+                        }
+                      }}
+                      className="hover:bg-slate-50 transition-colors cursor-pointer"
                     >
+                      <td className="px-6 py-4">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleBillingInvoiceSelection(String(inv.id));
+                          }}
+                          className="text-slate-500 hover:text-slate-700"
+                          title="Select"
+                          aria-label="Select invoice"
+                        >
+                          {billingSelectedInvoiceIds.includes(String(inv.id)) ? (
+                            <CheckSquare size={18} />
+                          ) : (
+                            <Square size={18} />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-6 py-4 font-mono text-sm text-slate-500">
                         {inv.invoice_id}
                       </td>
@@ -1212,23 +1470,46 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                         ₹{inv.amount.toLocaleString()}
                       </td>
                       <td className="px-6 py-4">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                            inv.status.toLowerCase() === "paid"
+                        {(() => {
+                          const label = getClientInvoiceStatusLabel(inv.status);
+                          const v = String(inv.status || "").toLowerCase();
+                          const tone =
+                            v === "paid"
                               ? "bg-green-50 text-green-600 border-green-200"
-                              : "bg-yellow-50 text-yellow-600 border-yellow-200"
-                          }`}
-                        >
-                          {inv.status}
-                        </span>
+                              : v === "partially_paid"
+                                ? "bg-yellow-50 text-yellow-600 border-yellow-200"
+                                : "bg-slate-50 text-slate-600 border-slate-200";
+                          return (
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-bold border ${tone}`}
+                            >
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </td>
-                      <td className="px-6 py-4 font-bold text-sm text-[#6C5CE7] hover:underline cursor-pointer">
-                        <Download size={16} className="inline mr-1" /> PDF
+                      <td className="px-6 py-4">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadInvoicePdf(inv.id, inv.invoice_id);
+                          }}
+                          className="font-bold text-sm text-[#6C5CE7] hover:underline"
+                        >
+                          <Download size={16} className="inline mr-1" /> PDF
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {billingInvoicesLoading && (
+                <div className="p-4 text-center text-slate-500 font-medium">
+                  <Loader2 className="inline animate-spin mr-2" size={16} />
+                  Loading…
+                </div>
+              )}
               {invoices.length === 0 && (
                 <div className="p-8 text-center text-slate-400">
                   <div>No invoices found.</div>
@@ -1253,6 +1534,35 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                 </div>
               )}
             </div>
+
+            {isBillingPreviewOpen && billingPreviewData && (
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+                <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col">
+                  <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Eye size={18} className="text-[#6C5CE7]" /> Invoice Preview
+                    </h3>
+                    <button
+                      onClick={() => setIsBillingPreviewOpen(false)}
+                      className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
+                      type="button"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                  <div className="p-4 overflow-auto max-h-[80vh] bg-slate-50">
+                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                      <div
+                        className="p-4"
+                        dangerouslySetInnerHTML={{
+                          __html: billingPreviewData.html,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

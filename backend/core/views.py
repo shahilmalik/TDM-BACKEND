@@ -30,12 +30,32 @@ class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     pagination_class = StandardResultsSetPagination
 
+    @action(detail=False, methods=['get'], url_path='dropdowns')
+    def dropdowns(self, request):
+        categories = list(
+            ServiceCategory.objects.order_by('name').values('id', 'name')
+        )
+        is_active = [
+            {'value': 'all', 'label': 'All'},
+            {'value': 'active', 'label': 'Active'},
+            {'value': 'inactive', 'label': 'Inactive'},
+        ]
+        return Response({'success': True, 'categories': categories, 'is_active': is_active})
+
     def get_queryset(self):
         qs = super().get_queryset()
 
         category = self.request.query_params.get('category')
         if category and category != 'All':
             qs = qs.filter(category__name=category)
+
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None and str(is_active).strip() != '':
+            v = str(is_active).strip().lower()
+            if v in ['true', '1', 'active', 'yes']:
+                qs = qs.filter(is_active=True)
+            elif v in ['false', '0', 'inactive', 'no']:
+                qs = qs.filter(is_active=False)
 
         return qs
 

@@ -43,7 +43,7 @@ export interface Invoice {
   invoice_id?: string;
   date: string;
   amount: number;
-  status: "Paid" | "Pending" | "Overdue" | "paid" | "pending" | "cancelled";
+  status: string;
   service: string;
   pdfUrl?: string;
 }

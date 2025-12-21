@@ -306,7 +306,12 @@ export const api = {
       }),
   },
   services: {
-    list: (params?: { page?: number; page_size?: number; category?: string }) => {
+    list: (params?: {
+      page?: number;
+      page_size?: number;
+      category?: string;
+      is_active?: "all" | "active" | "inactive" | string;
+    }) => {
       const searchParams = new URLSearchParams();
       if (params) {
         for (const [key, value] of Object.entries(params)) {
@@ -318,6 +323,13 @@ export const api = {
       const url = qs ? `/services/?${qs}` : "/services/";
       return request<any>(url, { method: "GET" });
     },
+    dropdowns: () =>
+      request<{ success: boolean; categories: { id: number; name: string }[]; is_active: { value: string; label: string }[] }>(
+        `/services/dropdowns/`,
+        { method: "GET" }
+      ),
+    get: (id: number | string) =>
+      request<BackendService>(`/services/${id}/`, { method: "GET" }),
     create: (data: any) =>
       request<BackendService>("/services/", {
         method: "POST",

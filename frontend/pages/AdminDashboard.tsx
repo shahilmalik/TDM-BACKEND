@@ -140,6 +140,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [serviceActiveFilter, setServiceActiveFilter] = useState<
+    "all" | "active" | "inactive"
+  >("all");
+  const [serviceCategoryFilterOptions, setServiceCategoryFilterOptions] =
+    useState<{ value: string; label: string }[]>([]);
+  const [serviceActiveFilterOptions, setServiceActiveFilterOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
 
   // Company Profile State (Using Provided Data)
   const [companyDetails, setCompanyDetails] = useState<AdminCompanyDetails>({
@@ -226,6 +234,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Service Modal
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const [selectedServiceDetail, setSelectedServiceDetail] =
+    useState<BackendService | null>(null);
+  const [isServiceDetailLoading, setIsServiceDetailLoading] = useState(false);
   const [newService, setNewService] = useState<{
     service_id: string;
     name: string;
@@ -449,6 +460,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [categoryFilter]);
 
   useEffect(() => {
+    if (activeTab !== "services") return;
+    resetServicesList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceActiveFilter]);
+
+  useEffect(() => {
     if (activeTab !== "invoices" || invoiceView !== "list") return;
     const el = invoicesSentinelRef.current;
     if (!el) return;
@@ -534,6 +551,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     servicesListLoading,
     servicesListPage,
     categoryFilter,
+    serviceActiveFilter,
   ]);
 
   const fetchCompanyProfile = async () => {
@@ -574,9 +592,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchServicesAndCategories = async () => {
     try {
-      const [servicesRes, fetchedCategories] = await Promise.all([
+      const [servicesRes, fetchedCategories, dropdownsRes] = await Promise.all([
         api.services.list({ page: 1, page_size: 1000 }),
         api.categories.list(),
+        api.services.dropdowns(),
       ]);
 
       const fetchedServices = Array.isArray(servicesRes)
@@ -585,6 +604,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       setServices(fetchedServices);
       setCategories(fetchedCategories);
+
+      const catOpts = dropdownsRes?.categories;
+      if (Array.isArray(catOpts)) {
+        setServiceCategoryFilterOptions([
+          { value: "All", label: "All" },
+          ...catOpts.map((c) => ({ value: c.name, label: c.name })),
+        ]);
+      } else {
+        setServiceCategoryFilterOptions([{ value: "All", label: "All" }]);
+      }
+
+      const opts = dropdownsRes?.is_active;
+      if (Array.isArray(opts) && opts.length > 0) {
+        setServiceActiveFilterOptions(opts);
+      } else {
+        setServiceActiveFilterOptions([
+          { value: "all", label: "All" },
+          { value: "active", label: "Active" },
+          { value: "inactive", label: "Inactive" },
+        ]);
+      }
     } catch (error) {
       console.error("Failed to fetch services", error);
     }
@@ -597,6 +637,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         page: 1,
         page_size: 20,
         category: categoryFilter,
+        is_active: serviceActiveFilter,
       });
 
       const items = Array.isArray(res) ? res : res?.results || [];
@@ -619,6 +660,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         page: nextPage,
         page_size: 20,
         category: categoryFilter,
+        is_active: serviceActiveFilter,
       });
       const items = Array.isArray(res) ? res : res?.results || [];
       setServicesList((prev) => [...prev, ...items]);
@@ -1346,6 +1388,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     setEditingServiceId(srv.id);
     setIsServiceModalOpen(true);
+  };
+
+  const openServiceDetail = async (serviceId: number | string) => {
+    setIsServiceDetailLoading(true);
+    try {
+      // optimistic: show existing row data first if available
+      const existing = servicesList.find((s) => String(s.id) === String(serviceId));
+      if (existing) setSelectedServiceDetail(existing);
+
+      const full = await api.services.get(serviceId);
+      setSelectedServiceDetail(full as any);
+    } catch (e: any) {
+      setAdminMessage({
+        type: "error",
+        text: e?.message || "Failed to load service details.",
+      });
+    } finally {
+      setIsServiceDetailLoading(false);
+    }
   };
 
   const deleteService = async (id: number) => {
@@ -2149,7 +2210,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <th className="px-6 py-4 font-bold text-slate-600">Email</th>
                     <th className="px-6 py-4 font-bold text-slate-600">Phone</th>
                     <th className="px-6 py-4 font-bold text-slate-600">Status</th>
-                    <th className="px-6 py-4 font-bold text-slate-600 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -2189,9 +2249,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           >
                             {c.isActive ? "Active" : "Inactive"}
                           </span>
-                        </td>
-                        <td className="px-6 py-4 text-right font-bold text-sm text-[#6C5CE7] hover:underline">
-                          View <ChevronRight size={16} className="inline ml-1" />
                         </td>
                       </tr>
                   ))}
@@ -2251,67 +2308,104 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 flex items-center justify-between gap-4">
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
                 <Filter size={16} />
-                <span>Category:</span>
+                <span>Filters:</span>
               </div>
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-              >
-                <option value="All">All</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-sm font-medium">Category</span>
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  >
+                    {(serviceCategoryFilterOptions.length
+                      ? serviceCategoryFilterOptions
+                      : [{ value: "All", label: "All" }]
+                    ).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-sm font-medium">Status</span>
+                  <select
+                    value={serviceActiveFilter}
+                    onChange={(e) =>
+                      setServiceActiveFilter(e.target.value as any)
+                    }
+                    className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  >
+                    {(serviceActiveFilterOptions.length
+                      ? serviceActiveFilterOptions
+                      : [
+                          { value: "all", label: "All" },
+                          { value: "active", label: "Active" },
+                          { value: "inactive", label: "Inactive" },
+                        ]
+                    ).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 border-b">
                   <tr>
+                    <th className="px-6 py-4 font-bold text-slate-600">Service ID</th>
                     <th className="px-6 py-4 font-bold text-slate-600">Service</th>
                     <th className="px-6 py-4 font-bold text-slate-600">Category</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Service ID</th>
+                    <th className="px-6 py-4 font-bold text-slate-600">Status</th>
                     <th className="px-6 py-4 font-bold text-slate-600 text-right">Price</th>
-                    <th className="px-6 py-4 font-bold text-slate-600 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {filteredServices.map((srv) => (
                     <tr
                       key={srv.id}
-                      className="hover:bg-slate-50 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openServiceDetail(srv.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openServiceDetail(srv.id);
+                        }
+                      }}
+                      className="hover:bg-slate-50 transition-colors cursor-pointer"
                     >
+                      <td className="px-6 py-4 font-mono text-sm text-slate-500">
+                        {srv.service_id}
+                      </td>
                       <td className="px-6 py-4 font-bold text-slate-800">
                         {srv.name}
                       </td>
                       <td className="px-6 py-4 text-slate-800">
                         {srv.category?.name || "—"}
                       </td>
-                      <td className="px-6 py-4 font-mono text-sm text-slate-500">
-                        {srv.service_id}
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
+                            srv.is_active
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {srv.is_active ? "Active" : "Inactive"}
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-right text-slate-800 font-bold">
                         ₹{Number(srv.price || 0).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleEditService(srv)}
-                          className="font-bold text-sm text-[#6C5CE7] hover:underline mr-4"
-                        >
-                          <Edit2 size={16} className="inline mr-1" /> Edit
-                        </button>
-                        <button
-                          onClick={() => deleteService(srv.id)}
-                          className="font-bold text-sm text-red-600 hover:underline"
-                        >
-                          <Trash2 size={16} className="inline mr-1" /> Delete
-                        </button>
                       </td>
                     </tr>
                   ))}
@@ -2356,14 +2450,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <th className="px-6 py-4 font-bold text-slate-600">Role</th>
                     <th className="px-6 py-4 font-bold text-slate-600">Email</th>
                     <th className="px-6 py-4 font-bold text-slate-600">Phone</th>
-                    <th className="px-6 py-4 font-bold text-slate-600 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {employees.map((e) => (
                     <tr
                       key={e.id}
-                      className="hover:bg-slate-50 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openEditEmployeeModal(e)}
+                      onKeyDown={(evt) => {
+                        if (evt.key === "Enter" || evt.key === " ") {
+                          evt.preventDefault();
+                          openEditEmployeeModal(e);
+                        }
+                      }}
+                      className="hover:bg-slate-50 transition-colors cursor-pointer"
                     >
                       <td className="px-6 py-4 font-bold text-slate-800">
                         {e.name}
@@ -2376,20 +2478,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </td>
                       <td className="px-6 py-4 text-slate-800">
                         {e.phone || "—"}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => openEditEmployeeModal(e)}
-                          className="font-bold text-sm text-[#6C5CE7] hover:underline mr-4"
-                        >
-                          <Edit2 size={16} className="inline mr-1" /> Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteEmployee(e.id)}
-                          className="font-bold text-sm text-red-600 hover:underline"
-                        >
-                          <Trash2 size={16} className="inline mr-1" /> Delete
-                        </button>
                       </td>
                     </tr>
                   ))}
@@ -2556,11 +2644,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       {visibleInvoices.map((inv) => (
                         <tr
                           key={inv.id}
-                          className="hover:bg-slate-50 transition-colors"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handlePreviewInvoice(Number(inv.id))}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              handlePreviewInvoice(Number(inv.id));
+                            }
+                          }}
+                          className="hover:bg-slate-50 transition-colors cursor-pointer"
                         >
                           <td className="px-6 py-4">
                             <button
-                              onClick={() => toggleInvoiceSelection(inv.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleInvoiceSelection(inv.id);
+                              }}
                               className="text-slate-500 hover:text-slate-700"
                               title="Select"
                             >
@@ -2596,7 +2696,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {(inv as any).statusValue !== "paid" &&
                               (inv as any).statusValue !== "cancelled" && (
                                 <button
-                                  onClick={() => openRecordPaymentModal(inv)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openRecordPaymentModal(inv);
+                                  }}
                                   className="font-bold text-sm text-slate-700 hover:underline mr-4"
                                 >
                                   <PaymentIcon size={16} className="inline mr-1" />
@@ -2606,7 +2709,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                             {(inv as any).statusValue === "paid" && inv.hasPipeline && (
                               <button
-                                onClick={() => handleStartPipeline(inv)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartPipeline(inv);
+                                }}
                                 title="Start pipeline"
                                 className="font-bold text-sm text-slate-700 hover:underline mr-4"
                               >
@@ -2615,19 +2721,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             )}
 
                             <button
-                              onClick={() => handlePreviewInvoice(Number(inv.id))}
-                              className="font-bold text-sm text-[#6C5CE7] hover:underline mr-4"
-                            >
-                              <Eye size={16} className="inline mr-1" /> Preview
-                            </button>
-
-                            <button
-                              onClick={() =>
-                                handleDownloadInvoice(
-                                  Number(inv.id),
-                                  inv.invoiceNumber
-                                )
-                              }
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadInvoice(Number(inv.id), inv.invoiceNumber);
+                              }}
                               className="font-bold text-sm text-[#6C5CE7] hover:underline"
                             >
                               <Download size={16} className="inline mr-1" /> PDF
@@ -3713,116 +3810,127 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Salutation
-                    </label>
-                    <select
-                      value={employeeForm.salutation}
-                      onChange={(e) =>
-                        setEmployeeForm((p) => ({
-                          ...p,
-                          salutation: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    >
-                      <option value="Mr">Mr</option>
-                      <option value="Mrs">Mrs</option>
-                      <option value="Ms">Ms</option>
-                      <option value="Dr">Dr</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      First Name
-                    </label>
-                    <input
-                      value={employeeForm.firstName}
-                      onChange={(e) =>
-                        setEmployeeForm((p) => ({
-                          ...p,
-                          firstName: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Last Name
-                    </label>
-                    <input
-                      value={employeeForm.lastName}
-                      onChange={(e) =>
-                        setEmployeeForm((p) => ({
-                          ...p,
-                          lastName: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    Salutation
+                  </label>
+                  <select
+                    value={employeeForm.salutation}
+                    onChange={(e) =>
+                      setEmployeeForm((p) => ({
+                        ...p,
+                        salutation: e.target.value,
+                      }))
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  >
+                    <option value="Mr">Mr</option>
+                    <option value="Mrs">Mrs</option>
+                    <option value="Ms">Ms</option>
+                    <option value="Dr">Dr</option>
+                  </select>
                 </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Role
-                    </label>
-                    <select
-                      value={employeeForm.role}
-                      onChange={(e) =>
-                        setEmployeeForm((p) => ({ ...p, role: e.target.value }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    >
-                      <option value="superadmin">superadmin</option>
-                      <option value="manager">manager</option>
-                      <option value="content_writer">content_writer</option>
-                      <option value="designer">designer</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Email
-                    </label>
-                    <input
-                      value={employeeForm.email}
-                      onChange={(e) =>
-                        setEmployeeForm((p) => ({
-                          ...p,
-                          email: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Phone
-                    </label>
-                    <input
-                      value={employeeForm.phone}
-                      onChange={(e) =>
-                        setEmployeeForm((p) => ({
-                          ...p,
-                          phone: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    First Name
+                  </label>
+                  <input
+                    value={employeeForm.firstName}
+                    onChange={(e) =>
+                      setEmployeeForm((p) => ({
+                        ...p,
+                        firstName: e.target.value,
+                      }))
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  />
                 </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    Last Name
+                  </label>
+                  <input
+                    value={employeeForm.lastName}
+                    onChange={(e) =>
+                      setEmployeeForm((p) => ({
+                        ...p,
+                        lastName: e.target.value,
+                      }))
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    Role
+                  </label>
+                  <select
+                    value={employeeForm.role}
+                    onChange={(e) =>
+                      setEmployeeForm((p) => ({ ...p, role: e.target.value }))
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  >
+                    <option value="superadmin">superadmin</option>
+                    <option value="manager">manager</option>
+                    <option value="content_writer">content_writer</option>
+                    <option value="designer">designer</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    Phone
+                  </label>
+                  <input
+                    value={employeeForm.phone}
+                    onChange={(e) =>
+                      setEmployeeForm((p) => ({
+                        ...p,
+                        phone: e.target.value,
+                      }))
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                  Email
+                </label>
+                <input
+                  value={employeeForm.email}
+                  onChange={(e) =>
+                    setEmployeeForm((p) => ({
+                      ...p,
+                      email: e.target.value,
+                    }))
+                  }
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                />
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
+              {editingEmployeeId && (
+                <button
+                  onClick={async () => {
+                    const ok = window.confirm("Delete employee?");
+                    if (!ok) return;
+                    await handleDeleteEmployee(String(editingEmployeeId));
+                    setIsEmployeeModalOpen(false);
+                  }}
+                  className="px-6 py-3 rounded-xl font-bold text-red-600 border border-red-200 hover:bg-red-50"
+                >
+                  Delete
+                </button>
+              )}
               <button
                 onClick={() => setIsEmployeeModalOpen(false)}
                 className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
@@ -3834,6 +3942,182 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="bg-[#6C5CE7] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#5a4ad1]"
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SERVICE DETAILS MODAL */}
+      {selectedServiceDetail && !isServiceModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Briefcase size={20} className="text-[#6C5CE7]" /> Service
+                Details
+              </h3>
+              <button
+                onClick={() => setSelectedServiceDetail(null)}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 overflow-y-auto max-h-[75vh] relative">
+              {isServiceDetailLoading && (
+                <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-slate-700 font-bold">
+                    <Loader2 className="animate-spin" size={18} /> Loading…
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
+                    Service ID
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
+                    {selectedServiceDetail.service_id || "—"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
+                    Category
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
+                    {selectedServiceDetail.category?.name || "—"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
+                    Name
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
+                    {selectedServiceDetail.name || "—"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
+                    Price
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
+                    {typeof selectedServiceDetail.price === "number"
+                      ? selectedServiceDetail.price.toFixed(2)
+                      : (selectedServiceDetail.price as any) ?? "—"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
+                    HSN
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
+                    {selectedServiceDetail.hsn || "—"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
+                    Pipeline
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
+                    {selectedServiceDetail.is_pipeline ? "Yes" : "No"}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
+                    Status
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
+                    {selectedServiceDetail.is_active ? "Active" : "Inactive"}
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
+                    Description
+                  </div>
+                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 whitespace-pre-wrap">
+                    {selectedServiceDetail.description || "—"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-5">
+                <div className="font-bold text-slate-800 mb-3">
+                  Pipeline Prefixes / Config
+                </div>
+
+                {!selectedServiceDetail.is_pipeline && (
+                  <div className="text-slate-500">Not a pipeline service.</div>
+                )}
+
+                {selectedServiceDetail.is_pipeline && (
+                  <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                    <div className="grid grid-cols-5 bg-slate-50 px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      <div className="col-span-3">Prefix</div>
+                      <div className="col-span-2">Count</div>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {(selectedServiceDetail.pipeline_config || []).length ===
+                        0 && (
+                        <div className="px-4 py-4 text-slate-500">
+                          No pipeline config.
+                        </div>
+                      )}
+                      {(selectedServiceDetail.pipeline_config || []).map(
+                        (row, idx) => (
+                          <div
+                            key={idx}
+                            className="grid grid-cols-5 px-4 py-3"
+                          >
+                            <div className="col-span-3 font-bold text-slate-800">
+                              {row.prefix || "—"}
+                            </div>
+                            <div className="col-span-2 font-bold text-slate-800">
+                              {row.count ?? "—"}
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
+              <button
+                onClick={() => setSelectedServiceDetail(null)}
+                className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  handleEditService(selectedServiceDetail);
+                }}
+                className="bg-[#0F172A] text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800"
+              >
+                Edit
+              </button>
+              <button
+                onClick={async () => {
+                  const ok = window.confirm("Delete service?");
+                  if (!ok) return;
+                  await deleteService(selectedServiceDetail.id);
+                  setSelectedServiceDetail(null);
+                }}
+                className="px-6 py-3 rounded-xl font-bold text-red-600 border border-red-200 hover:bg-red-50"
+              >
+                Delete
               </button>
             </div>
           </div>
@@ -4020,6 +4304,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
             <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
+              {editingServiceId && (
+                <button
+                  onClick={async () => {
+                    const ok = window.confirm("Delete service?");
+                    if (!ok) return;
+                    await deleteService(editingServiceId);
+                    setIsServiceModalOpen(false);
+                  }}
+                  className="px-6 py-3 rounded-xl font-bold text-red-600 border border-red-200 hover:bg-red-50"
+                >
+                  Delete
+                </button>
+              )}
               <button
                 onClick={() => setIsServiceModalOpen(false)}
                 className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
