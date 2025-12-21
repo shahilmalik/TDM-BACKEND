@@ -79,7 +79,7 @@ class CreateAccessTokenView(APIView):
 		except MetaGraphAPIError as e:
 			return Response({"detail": f"Invalid access token: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 		
-		# Create and save token
+		# Create and save token (append-only; does not affect other tokens)
 		from datetime import datetime, timedelta
 		token = MetaAccessToken.objects.create(
 			account_label=account_label or user_name,
@@ -104,7 +104,9 @@ class FetchLinkedPagesView(APIView):
 	"""
 	def get(self, request):
 		from .utils import meta_graph_api_request, MetaGraphAPIError
-		tokens = MetaAccessToken.objects.filter(status="active")
+		# Fetch pages across all ACTIVE tokens.
+		# Do not overwrite or invalidate other tokens when adding a new token.
+		tokens = MetaAccessToken.objects.filter(status="active").order_by("-created_at")
 		all_pages = []
 		for token in tokens:
 			try:
@@ -123,10 +125,10 @@ class FetchLinkedPagesView(APIView):
 						"ig_account_id": page.get("instagram_business_account", {}).get("id") if page.get("instagram_business_account") else None
 					})
 			except MetaGraphAPIError as e:
-				# Mark token inactive if expired/invalid, but continue with other tokens
-				if "expired" in str(e).lower() or "invalid" in str(e).lower():
+				# Mark ONLY this token invalid if the Graph API indicates auth failure.
+				if getattr(e, "status_code", None) == 401:
 					token.status = "invalid"
-					token.save(update_fields=["status"])
+					token.save(update_fields=["status", "updated_at"])
 				continue
 			except Exception as e:
 				# Catch any other errors and continue
@@ -339,50 +341,74 @@ class InstagramPostDetailView(APIView):
 class ListAllUserTokensView(APIView):
 	"""
 	GET: List all Meta access tokens with user info from Graph API.
-	Shows id, account_label, user_name, profile_picture, status.
+	Returns tokens for all statuses; only marks a token invalid when the Graph API
+	explicitly indicates the token is expired/invalid.
 	"""
 	def get(self, request):
 		from .utils import meta_graph_api_request, MetaGraphAPIError
 		
-		tokens = MetaAccessToken.objects.filter(status="active").order_by('-created_at')
+		tokens = MetaAccessToken.objects.all().order_by('-created_at')
 		token_list = []
 		
 		for token in tokens:
 			try:
-				# Fetch user info from Meta
-				data = meta_graph_api_request(
-					"/me",
-					token.access_token,
-					params={"fields": "id,name,picture"}
-				)
+				user_name = None
+				profile_picture = None
 				
-				user_name = data.get("name")
-				profile_picture = data.get("picture", {}).get("data", {}).get("url")
-				meta_user_id = data.get("id")
-				
-				# Update token with Meta user info if not already stored
-				if not token.meta_user_id:
-					token.meta_user_id = meta_user_id
-					token.profile_picture_url = profile_picture
-					token.save(update_fields=["meta_user_id", "profile_picture_url"])
+				# Fetch user info only for active tokens.
+				if token.status == "active":
+					data = meta_graph_api_request(
+						"/me",
+						token.access_token,
+						params={"fields": "id,name,picture"}
+					)
+					
+					user_name = data.get("name")
+					profile_picture = data.get("picture", {}).get("data", {}).get("url")
+					meta_user_id = data.get("id")
+					
+					# Update token with Meta user info if not already stored
+					if meta_user_id and not token.meta_user_id:
+						token.meta_user_id = meta_user_id
+						# Store whatever picture we got for future fallback.
+						token.profile_picture_url = profile_picture
+						token.save(update_fields=["meta_user_id", "profile_picture_url"])
 				
 				token_list.append({
 					"id": token.id,
 					"account_label": token.account_label,
-					"user_name": user_name,
-					"profile_picture": profile_picture,
+					"user_name": user_name or token.account_label,
+					"profile_picture": profile_picture or (token.profile_picture_url or ""),
 					"status": token.status,
 					"expires_at": token.expires_at,
 					"created_at": token.created_at,
 				})
 			except MetaGraphAPIError as e:
-				# Mark token as invalid if it fails, but continue with other tokens
-				token.status = "invalid"
-				token.save(update_fields=["status"])
-				continue
+				# Mark ONLY this token invalid if the Graph API indicates auth failure.
+				if token.status == "active" and getattr(e, "status_code", None) == 401:
+					token.status = "invalid"
+					token.save(update_fields=["status", "updated_at"])
+
+				token_list.append({
+					"id": token.id,
+					"account_label": token.account_label,
+					"user_name": token.account_label,
+					"profile_picture": token.profile_picture_url or "",
+					"status": token.status,
+					"expires_at": token.expires_at,
+					"created_at": token.created_at,
+				})
 			except Exception as e:
-				# Catch any other errors and continue
-				continue
+				# Catch any other errors and still return the token record
+				token_list.append({
+					"id": token.id,
+					"account_label": token.account_label,
+					"user_name": token.account_label,
+					"profile_picture": token.profile_picture_url or "",
+					"status": token.status,
+					"expires_at": token.expires_at,
+					"created_at": token.created_at,
+				})
 		
 		return Response({"tokens": token_list, "total_count": len(token_list)})
 

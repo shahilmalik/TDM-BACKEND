@@ -323,6 +323,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     fetchData();
   }, []);
 
+  const currentUserType = String(
+    (currentUser?.type ?? currentUser?.role ?? "").toString()
+  ).toLowerCase();
+  const isPipelineOnlyUser = ["designer", "content_writer"].includes(
+    currentUserType
+  );
+
+  const setActiveTabSafe = (
+    tab:
+      | "pipeline"
+      | "clients"
+      | "invoices"
+      | "services"
+      | "employees"
+      | "settings"
+      | "meta"
+  ) => {
+    if (isPipelineOnlyUser && tab !== "pipeline") return;
+    setActiveTab(tab);
+  };
+
+  // Hard guard: pipeline-only roles should never leave pipeline tab.
+  useEffect(() => {
+    if (!isPipelineOnlyUser) return;
+    if (activeTab !== "pipeline") setActiveTab("pipeline");
+  }, [isPipelineOnlyUser, activeTab]);
+
   // Fetch Data when tabs active
   useEffect(() => {
     if (activeTab === "services") {
@@ -467,6 +494,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setClients(mapped);
     } catch (e) {
       console.error("Failed to fetch clients", e);
+    }
+  };
+
+  const fetchPipeline = async () => {
+    try {
+      const kanbanItems = await api.kanban.list();
+      const grouped: Record<string, PipelinePost[]> = {};
+
+      (kanbanItems || []).forEach((item: any) => {
+        const clientId =
+          item?.client?.id ?? item?.client_id ?? item?.client ?? null;
+        if (!clientId) return;
+        const key = String(clientId);
+
+        const post: PipelinePost = {
+          id: item.id,
+          title: item.title,
+          platform: item.platforms?.[0] || "instagram",
+          status: mapBackendColumnToStatus(item.column),
+          dueDate: item.due_date || "",
+          description: item.description || "",
+          thumbnail: item.thumbnail,
+        };
+
+        grouped[key] = [...(grouped[key] || []), post];
+      });
+
+      setPipelineData(grouped);
+    } catch (e) {
+      console.error("Failed to fetch pipeline", e);
     }
   };
 
@@ -625,52 +682,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchInvoiceDropdowns = async () => {
     try {
-      const [clients, modes, terms] = await Promise.all([
-        api.invoice.getDropdownClients(),
-        api.invoice.getDropdownPaymentModes(),
-        api.invoice.getDropdownPaymentTerms(),
-      ]);
+      const [clientsRes, paymentModesRes, paymentTermsRes] = await Promise.all(
+        [
+          api.invoice.getDropdownClients(),
+          api.invoice.getDropdownPaymentModes(),
+          api.invoice.getDropdownPaymentTerms(),
+        ]
+      );
       setInvoiceDropdowns({
-        clients: clients,
-        paymentModes: modes,
-        paymentTerms: terms,
+        clients: clientsRes || [],
+        paymentModes: paymentModesRes || [],
+        paymentTerms: paymentTermsRes || [],
       });
     } catch (e) {
-      console.error("Failed to fetch dropdowns", e);
-    }
-  };
-
-  const fetchPipeline = async () => {
-    try {
-      const items = await api.kanban.list();
-      const grouped: Record<string, PipelinePost[]> = {};
-
-      items.forEach((item: any) => {
-        const cId =
-          typeof item.client === "object" ? item.client.id : item.client;
-        if (!cId) return;
-
-        if (!grouped[cId]) grouped[cId] = [];
-        grouped[cId].push({
-          id: item.id,
-          title: item.title,
-          platform: item.platforms?.[0] || "instagram",
-          status: mapBackendColumnToStatus(item.column),
-          dueDate: item.due_date,
-          description: item.description,
-          assignees: item.assignees || [],
-          thumbnail: item.thumbnail,
-        });
-      });
-      setPipelineData(grouped);
-    } catch (e) {
-      console.error("Failed to fetch pipeline", e);
+      console.error("Failed to fetch invoice dropdowns", e);
     }
   };
 
   const fetchMeta = async () => {
     try {
-      const demoMode = localStorage.getItem("demoMode");
+      const demoMode =
+        localStorage.getItem("demoMode") === "true" ||
+        localStorage.getItem("DEMO_META") === "true";
+
       if (demoMode) {
         setMetaTokens([
           {
@@ -704,14 +738,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             ig_account_id: "17841462826367548",
           },
         ]);
-      } else {
-        const [tokenRes, pageRes] = await Promise.all([
-          api.meta.listTokens(),
-          api.meta.listPages(),
-        ]);
-        setMetaTokens(tokenRes.tokens);
-        setMetaPages(pageRes.pages);
+        return;
       }
+
+      const [tokenRes, pageRes] = await Promise.all([
+        api.meta.listTokens(),
+        api.meta.listPages(),
+      ]);
+      setMetaTokens(tokenRes.tokens);
+      setMetaPages(pageRes.pages);
     } catch (e) {
       console.error("Meta fetch error", e);
     }
@@ -1331,7 +1366,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
         <nav className="flex-1 px-4 space-y-2 pb-4">
           <button
-            onClick={() => setActiveTab("pipeline")}
+            onClick={() => setActiveTabSafe("pipeline")}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
               activeTab === "pipeline"
                 ? "bg-[#FF6B6B] text-white"
@@ -1340,66 +1375,70 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <Kanban size={20} /> Content Pipeline
           </button>
-          <button
-            onClick={() => setActiveTab("clients")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === "clients"
-                ? "bg-[#FF6B6B] text-white"
-                : "text-slate-400 hover:bg-white/5"
-            }`}
-          >
-            <UserCircle size={20} /> Clients
-          </button>
-          <button
-            onClick={() => setActiveTab("invoices")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === "invoices"
-                ? "bg-[#FF6B6B] text-white"
-                : "text-slate-400 hover:bg-white/5"
-            }`}
-          >
-            <FileSpreadsheet size={20} /> Invoices
-          </button>
-          <button
-            onClick={() => setActiveTab("services")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === "services"
-                ? "bg-[#FF6B6B] text-white"
-                : "text-slate-400 hover:bg-white/5"
-            }`}
-          >
-            <Briefcase size={20} /> Services
-          </button>
-          <button
-            onClick={() => setActiveTab("employees")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === "employees"
-                ? "bg-[#FF6B6B] text-white"
-                : "text-slate-400 hover:bg-white/5"
-            }`}
-          >
-            <Users size={20} /> Employees
-          </button>
-          <button
-            onClick={() => setActiveTab("meta")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === "meta"
-                ? "bg-[#FF6B6B] text-white"
-                : "text-slate-400 hover:bg-white/5"
-            }`}
-          >
-            <Share2 size={20} /> Integrate Meta
-          </button>
-          <button
-            onClick={() => setActiveTab("settings")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === "settings"
-                ? "bg-[#FF6B6B] text-white"
-                : "text-slate-400 hover:bg-white/5"
-            }`}
-          >
-            <Building size={20} /> Company Profile
-          </button>
+          {!isPipelineOnlyUser && (
+            <>
+              <button
+                onClick={() => setActiveTabSafe("clients")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                  activeTab === "clients"
+                    ? "bg-[#FF6B6B] text-white"
+                    : "text-slate-400 hover:bg-white/5"
+                }`}
+              >
+                <UserCircle size={20} /> Clients
+              </button>
+              <button
+                onClick={() => setActiveTabSafe("invoices")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                  activeTab === "invoices"
+                    ? "bg-[#FF6B6B] text-white"
+                    : "text-slate-400 hover:bg-white/5"
+                }`}
+              >
+                <FileSpreadsheet size={20} /> Invoices
+              </button>
+              <button
+                onClick={() => setActiveTabSafe("services")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                  activeTab === "services"
+                    ? "bg-[#FF6B6B] text-white"
+                    : "text-slate-400 hover:bg-white/5"
+                }`}
+              >
+                <Briefcase size={20} /> Services
+              </button>
+              <button
+                onClick={() => setActiveTabSafe("employees")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                  activeTab === "employees"
+                    ? "bg-[#FF6B6B] text-white"
+                    : "text-slate-400 hover:bg-white/5"
+                }`}
+              >
+                <Users size={20} /> Employees
+              </button>
+              <button
+                onClick={() => setActiveTabSafe("meta")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                  activeTab === "meta"
+                    ? "bg-[#FF6B6B] text-white"
+                    : "text-slate-400 hover:bg-white/5"
+                }`}
+              >
+                <Share2 size={20} /> Integrate Meta
+              </button>
+              <button
+                onClick={() => setActiveTabSafe("settings")}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                  activeTab === "settings"
+                    ? "bg-[#FF6B6B] text-white"
+                    : "text-slate-400 hover:bg-white/5"
+                }`}
+              >
+                <Building size={20} /> Company Profile
+              </button>
+            </>
+          )}
         </nav>
         <div className="p-4 border-t border-slate-700">
           <button
@@ -2317,7 +2356,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {metaPages.map((page) => (
                   <div
-                    key={page.fb_page_id}
+                    key={`${page.token_id}-${page.fb_page_id}`}
                     className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow"
                   >
                     <div className="flex items-center gap-4">

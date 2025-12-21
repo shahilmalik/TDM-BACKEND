@@ -390,13 +390,13 @@ export const api = {
         method: "GET",
       }),
     sendTokenOtp: () =>
-      request<{ detail: string }>("/meta/tokens/send_otp/", { method: "POST" }),
+      request<{ detail: string }>("/meta/request-otp/", { method: "POST" }),
     createToken: (data: {
       account_label: string;
       access_token: string;
       otp: string;
     }) =>
-      request<MetaToken>("/meta/tokens/", {
+      request<MetaToken>("/meta/create-token/", {
         method: "POST",
         body: JSON.stringify(data),
       }),
