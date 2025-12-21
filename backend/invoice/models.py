@@ -54,6 +54,16 @@ class BusinessInfo(BaseModel):
         # Enforce singleton: do not allow creating a new instance if one already exists
         if not self.pk and BusinessInfo.objects.exists():
             raise ValidationError("Only one BusinessInfo instance is allowed. Update the existing one instead.")
+        
+        if self.bank_account_name:
+            self.bank_account_name = self.bank_account_name.upper()
+        if self.bank_account_number:
+            self.bank_account_number = self.bank_account_number.upper()
+        if self.bank_name:
+            self.bank_name = self.bank_name.upper()
+        if self.ifsc:
+            self.ifsc = self.ifsc.upper()
+
         super().save(*args, **kwargs)
 
 
@@ -168,7 +178,7 @@ class Invoice(BaseModel):
 
         mon = calendar.month_abbr[self.date.month].upper()[:3]
         yy = str(self.date.year)[-2:]
-        return f"{client_code}{self.pk}{mon}{yy}"
+        return f"{client_code}{self.pk}{mon}{yy}".upper()
 
     def save(self, *args, **kwargs):
         # immutable after creation: disallow updates to core fields once created

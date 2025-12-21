@@ -92,6 +92,13 @@ class Service(BaseModel):
     is_pipeline = models.BooleanField(default=False)
     pipeline_config = models.JSONField(default=list, blank=True)
 
+    def save(self, *args, **kwargs):
+        if self.service_id:
+            self.service_id = self.service_id.upper()
+        if self.hsn:
+            self.hsn = self.hsn.upper()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.name
 
@@ -114,5 +121,12 @@ class ClientProfile(BaseModel):
     pending_contact_email_verified = models.BooleanField(default=False)
     # two-letter client code used in invoice numbers; generated if missing
     client_code = models.CharField(max_length=4, blank=True, null=True, unique=True)
+
+    def save(self, *args, **kwargs):
+        if self.client_code:
+            self.client_code = self.client_code.upper()
+        if self.gstin:
+            self.gstin = self.gstin.upper()
+        super().save(*args, **kwargs)
 
 

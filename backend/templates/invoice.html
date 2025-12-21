@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Invoice #{{ invoice.number }}</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap');
 
         :root {
-            --brand-color: #6C5CE7;
-            --accent-color: #FF6B6B;
-            --dark-color: #0F172A;
-            --text-color: #334155;
-            --light-gray: #f1f5f9;
-            --border-color: #e2e8f0;
+            --brand-orange: #FF6B6B;
+            --brand-purple: #6C5CE7;
+            --slate-900: #0F172A;
+            --slate-700: #334155;
+            --slate-500: #64748b;
+            --slate-100: #f1f5f9;
         }
 
         * {
@@ -24,170 +24,272 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            color: var(--text-color);
+            color: var(--slate-700);
             background-color: #f8fafc;
             margin: 0;
-            padding: 20px;
+            padding: 0;
             font-size: 12px;
-            line-height: 1.6;
+            line-height: 1.5;
         }
         
         .invoice-wrapper {
             width: 210mm;
-            height: 297mm;
-            margin: 0 auto;
+            min-height: 297mm;
+            margin: 20px auto;
             background: #fff;
-            padding: 25mm;
-            box-shadow: 0 0 15px rgba(0,0,0,0.05);
             position: relative;
             display: flex;
             flex-direction: column;
+            box-shadow: 0 0 20px rgba(0,0,0,0.05);
+        }
+
+        /* Top Accent Bar */
+        .top-accent {
+            height: 8px;
+            background: linear-gradient(90deg, var(--brand-orange), var(--brand-purple));
+            width: 100%;
         }
 
         header {
-            background: var(--dark-color);
-            color: white;
-            padding: 30px 40px;
-            margin: -25mm -25mm 0 -25mm;
-            border-radius: 8px 8px 0 0;
-        }
-
-        .header-grid {
+            padding: 40px 50px;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            border-bottom: 1px solid var(--slate-100);
         }
-        
-        .company-branding h1 {
+
+        .company-info h1 {
+            font-family: 'Outfit', sans-serif;
             margin: 0;
             font-size: 28px;
             font-weight: 800;
-            letter-spacing: -1px;
-            color: white;
+            color: var(--slate-900);
+            letter-spacing: -0.5px;
         }
-        .company-branding h1 span { color: var(--brand-color); }
-
-        .company-address {
-            font-size: 12px;
-            color: #cbd5e1;
-            margin-top: 8px;
-        }
+        .company-info h1 span { color: var(--brand-purple); }
         
-        .invoice-meta { text-align: right; }
-        .invoice-title {
-            font-size: 48px;
+        .company-details {
+            margin-top: 10px;
+            color: var(--slate-500);
+            line-height: 1.6;
+        }
+
+        .invoice-status-box {
+            text-align: right;
+        }
+
+        .invoice-label {
+            font-family: 'Outfit', sans-serif;
+            font-size: 40px;
             font-weight: 800;
-            color: rgba(255,255,255,0.1);
             text-transform: uppercase;
-            margin: 0;
+            color: var(--slate-100);
             line-height: 1;
+            margin-bottom: 10px;
         }
-        .meta-group {
-            margin-top: 4px;
-            font-size: 14px;
-            color: #e2e8f0;
-        }
-        .meta-group strong { color: white; }
 
-        .details-grid {
-            display: flex;
-            justify-content: space-between;
-            margin: 40px 0;
-            gap: 40px;
+        .meta-grid {
+            display: grid;
+            grid-template-columns: auto auto;
+            gap: 5px 20px;
+            text-align: right;
         }
-        
-        .box-title {
+        .meta-label { color: var(--slate-500); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+        .meta-value { color: var(--slate-900); font-weight: 700; font-size: 13px; }
+
+        .billing-section {
+            padding: 40px 50px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 50px;
+            background-color: #fafbfd;
+        }
+
+        .section-title {
+            font-family: 'Outfit', sans-serif;
             font-size: 10px;
             text-transform: uppercase;
-            color: #94a3b8;
-            font-weight: 700;
-            margin-bottom: 8px;
-            letter-spacing: 0.5px;
+            color: var(--brand-purple);
+            font-weight: 800;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .client-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--slate-100);
         }
 
         .client-name {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 700;
-            color: var(--dark-color);
-            margin-bottom: 4px;
+            color: var(--slate-900);
+            margin-bottom: 5px;
         }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 32px;
+
+        .client-address {
+            color: var(--slate-500);
+            line-height: 1.6;
+        }
+
+        .payment-method-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            background: var(--slate-100);
+            border-radius: 6px;
+            font-weight: 700;
+            color: var(--slate-900);
+            font-size: 11px;
+            margin-top: 5px;
+        }
+
+        .items-section {
+            padding: 0 50px;
             flex-grow: 1;
         }
-        
-        th {
+
+        table.items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .items-table th {
+            background: #fff;
             text-align: left;
-            padding: 12px 0;
+            padding: 15px 10px;
             font-size: 10px;
             text-transform: uppercase;
-            font-weight: 700;
-            color: #94a3b8;
-            border-bottom: 2px solid var(--border-color);
+            font-weight: 800;
+            color: var(--slate-500);
+            border-bottom: 2px solid var(--slate-900);
         }
-        
-        td {
-            padding: 15px 0;
-            border-bottom: 1px solid var(--border-color);
+
+        .items-table td {
+            padding: 20px 10px;
+            border-bottom: 1px solid var(--slate-100);
             vertical-align: top;
         }
-        
-        .description-main {
-            font-weight: 600;
-            color: var(--dark-color);
-            margin-bottom: 2px;
+
+        .item-name {
+            font-weight: 700;
+            color: var(--slate-900);
+            font-size: 13px;
+            margin-bottom: 4px;
         }
-        .description-sub {
+        .item-desc {
+            color: var(--slate-500);
             font-size: 11px;
-            color: #64748b;
+            max-width: 350px;
+        }
+        .item-hsn {
+            font-family: 'ui-monospace', 'Menlo', 'Monaco', 'Consolas', monospace;
+            font-size: 10px;
+            color: var(--slate-500);
+            margin-top: 5px;
         }
 
         .text-right { text-align: right; }
-        .font-mono { font-family: 'Menlo', 'Consolas', monospace; }
+        .font-mono { font-family: 'ui-monospace', 'Menlo', 'Monaco', 'Consolas', monospace; }
 
-        .summary-container {
-            display: flex;
-            justify-content: flex-end;
-            margin-top: auto;
-            padding-top: 20px;
+        .footer-container {
+            padding: 40px 50px;
         }
-        
-        .summary-table { width: 280px; }
-        .summary-table td { padding: 10px 0; border-bottom: 1px solid var(--border-color); }
-        .summary-table tr:last-child td { border-bottom: none; }
-        .summary-label { color: #64748b; }
-        .summary-value { font-weight: 600; text-align: right; }
-        
-        .total-row td {
-            padding-top: 15px;
-            font-size: 18px;
+
+        .bottom-grid {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 40px;
+            align-items: end;
+        }
+
+        .bank-card {
+            background: var(--slate-900);
+            color: white;
+            padding: 25px;
+            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+        .bank-card::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 150px;
+            height: 150px;
+            background: white;
+            opacity: 0.05;
+            border-radius: 50%;
+        }
+
+        .bank-card .bank-title {
+            color: var(--brand-orange);
+            font-size: 10px;
             font-weight: 800;
-        }
-        .total-label { color: var(--dark-color); }
-        .total-value { color: var(--brand-color); }
-
-        footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            gap: 32px;
-            font-size: 11px;
-            color: #64748b;
-        }
-        
-        .bank-details .bank-title {
-            font-weight: 700;
-            color: var(--dark-color);
-            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
             display: block;
         }
-        
-        .terms { text-align: right; }
+
+        .bank-info-row {
+            display: flex;
+            margin-bottom: 8px;
+            font-size: 11px;
+        }
+        .bank-info-label { width: 100px; color: #94a3b8; font-weight: 500; }
+        .bank-info-value { flex: 1; font-weight: 600; color: #f8fafc; }
+
+        .summary-table {
+            width: 100%;
+        }
+        .summary-table td {
+            padding: 8px 0;
+        }
+        .summary-label {
+            color: var(--slate-500);
+            font-weight: 500;
+        }
+        .summary-value {
+            text-align: right;
+            font-weight: 700;
+            color: var(--slate-900);
+            font-size: 13px;
+        }
+
+        .total-row {
+            border-top: 2px solid var(--slate-100);
+            margin-top: 10px;
+            padding-top: 15px;
+        }
+        .grand-total-label {
+            font-family: 'Outfit', sans-serif;
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--slate-900);
+        }
+        .grand-total-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--slate-900);
+            text-align: right;
+        }
+
+        .terms-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--slate-100);
+            font-size: 10px;
+            color: var(--slate-500);
+            line-height: 1.6;
+        }
 
         @media print {
             body { background: white; padding: 0; }
@@ -196,13 +298,8 @@
                 margin: 0;
                 width: 100%;
                 height: 100%;
-                padding: 0;
             }
-            header {
-                border-radius: 0;
-                margin: 0;
-                padding: 20px;
-            }
+            .top-accent { height: 12px; }
             @page { 
                 size: A4;
                 margin: 0; 
@@ -213,119 +310,169 @@
 <body>
 
 <div class="invoice-wrapper">
+    <div class="top-accent"></div>
+    
     <header>
-        <div class="header-grid">
-            <div class="company-branding">
-                {% if company.logo %}
-                    <img src="{{ company.logo }}" alt="{{ company.name }} logo" style="max-height: 70px; margin-bottom: 10px;">
-                {% else %}
-                    <h1>Tarviz<span>Digimart</span></h1>
-                {% endif %}
-                <div class="company-address">
-                    {{ company.address_line1 }}, {{ company.address_line2 }}<br>
-                    {{ company.email }} | {{ company.phone }}
-                </div>
+        <div class="company-info">
+            {% if company.logo %}
+                <img src="{{ company.logo }}" alt="{{ company.name }} logo" style="max-height: 60px; margin-bottom: 15px;">
+            {% else %}
+                <h1>Tarviz<span>Digimart</span></h1>
+            {% endif %}
+            <div class="company-details">
+                <strong>{{ company.name }}</strong><br>
+                {{ company.address_line1 }}<br>
+                {{ company.address_line2 }}<br>
+                <span style="color: var(--slate-900);">{{ company.email }}</span> | {{ company.phone }}
             </div>
-            
-            <div class="invoice-meta">
-                <div class="invoice-title">Invoice</div>
-                <div class="meta-group">Invoice # <strong>{{ invoice.number }}</strong></div>
-                <div class="meta-group">Date: <strong>{{ invoice.date }}</strong></div>
-                <div class="meta-group" style="color: var(--accent-color);">Due: <strong>{{ invoice.due_date }}</strong></div>
+        </div>
+        
+        <div class="invoice-status-box">
+            <div class="invoice-label">Invoice</div>
+            <div class="meta-grid">
+                <span class="meta-label">Invoice Number</span>
+                <span class="meta-value">{{ invoice.number }}</span>
+                
+                <span class="meta-label">Invoice Date</span>
+                <span class="meta-value">{{ invoice.date }}</span>
+                
+                {% if invoice.due_date %}
+                <span class="meta-label" style="color: var(--brand-orange);">Due Date</span>
+                <span class="meta-value" style="color: var(--brand-orange);">{{ invoice.due_date }}</span>
+                {% endif %}
             </div>
         </div>
     </header>
 
-    <main style="padding: 40px 0;">
-        <div class="details-grid">
-            <div class="client-info">
-                <span class="box-title">Bill To</span>
+    <div class="billing-section">
+        <div>
+            <span class="section-title">Bill To</span>
+            <div class="client-card">
                 <div class="client-name">{{ client.business_name }}</div>
-                <div style="max-width: 250px;">
+                <div class="client-address">
                     {{ client.address }}<br>
-                    {{ client.phone }}
+                    <strong>Phone:</strong> {{ client.phone }}
+                    {% if client.gstin %}
+                    <br><strong>GSTIN:</strong> <span class="font-mono" style="color: var(--slate-900);">{{ client.gstin }}</span>
+                    {% endif %}
                 </div>
-                {% if client.gstin %}
-                <div style="margin-top: 8px; font-size: 12px; font-weight: 600;"><strong>GSTIN:</strong> {{ client.gstin }}</div>
-                {% endif %}
-            </div>
-
-            <div class="payment-info" style="text-align: right;">
-                 <div style="margin-bottom: 24px;">
-                    <span class="box-title">Payment Mode</span>
-                    <span style="font-weight: 600; color: var(--dark-color);">{{ invoice.payment_mode }}</span>
-                 </div>
-                 <div>
-                    <span class="box-title">Payment Terms</span>
-                    <span style="color: var(--text-color);">{{ invoice.payment_terms }}</span>
-                 </div>
             </div>
         </div>
+        <div>
+            <span class="section-title">Payment info</span>
+            <div class="client-card">
+                <div style="margin-bottom: 15px;">
+                    <span class="meta-label" style="display: block; margin-bottom: 4px;">Method</span>
+                    <span class="payment-method-tag">{{ invoice.payment_mode }}</span>
+                </div>
+                <div>
+                    <span class="meta-label" style="display: block; margin-bottom: 4px;">Terms</span>
+                    <span style="font-weight: 600; color: var(--slate-900);">{{ invoice.payment_terms }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
-        <table>
+    <div class="items-section">
+        <table class="items-table">
             <thead>
                 <tr>
-                    <th style="width: 60%;">Description</th>
-                    <th class="text-right" style="width: 15%;">Quantity</th>
-                    <th class="text-right" style="width: 15%;">Rate</th>
-                    <th class="text-right" style="width: 10%;">Amount</th>
+                    <th style="width: 55%;">Service Description</th>
+                    <th style="width: 15%;">HSN/SAC</th>
+                    <th class="text-right" style="width: 10%;">Qty</th>
+                    <th class="text-right" style="width: 20%;">Amount</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in invoice.items %}
                 <tr>
                     <td>
-                        <div class="description-main">{{ item.name }}</div>
-                        <div class="description-sub">{{ item.description }}</div>
+                        <div class="item-name">{{ item.name }}</div>
+                        <div class="item-desc">{{ item.description }}</div>
                     </td>
-                    <td class="text-right">{{ item.quantity }}</td>
-                    <td class="text-right">{{ item.unit_price }}</td>
-                    <td class="text-right font-mono" style="font-weight: 600;">{{ item.total }}</td>
+                    <td class="font-mono">{{ item.hsn_sac }}</td>
+                    <td class="text-right font-mono">{{ item.quantity }}</td>
+                    <td class="text-right font-mono" style="font-weight: 700; color: var(--slate-900);">{{ item.total }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-    </main>
-
-    <div class="summary-container">
-        <table class="summary-table">
-            <tr>
-                <td class="summary-label">Subtotal</td>
-                <td class="summary-value font-mono">{{ invoice.subtotal }}</td>
-            </tr>
-            <tr>
-                <td class="summary-label">GST ({{ invoice.gst_percentage }}%)</td>
-                <td class="summary-value font-mono">{{ invoice.gst_amount }}</td>
-            </tr>
-            <tr class="total-row">
-                <td class="total-label">Total</td>
-                <td class="total-value font-mono">{{ invoice.total_amount }}</td>
-            </tr>
-            <tr>
-                <td class="summary-label">Amount Paid</td>
-                <td class="summary-value font-mono" style="color: #10b981;">-{{ invoice.paid_amount }}</td>
-            </tr>
-            <tr class="total-row" style="background: var(--light-gray); border-radius: 4px;">
-                <td class="total-label" style="padding: 10px;">Balance Due</td>
-                <td class="total-value font-mono" style="padding: 10px;">{{ invoice.pending_amount }}</td>
-            </tr>
-        </table>
     </div>
 
-    <footer>
-        <div class="bank-details">
-            <span class="bank-title">Payment Details</span>
-            <div><strong>Bank:</strong> {{ bank.bank_name }}</div>
-            <div><strong>Account Name:</strong> {{ bank.account_name }}</div>
-            <div><strong>Account No:</strong> {{ bank.account_number }}</div>
-            <div><strong>IFSC:</strong> {{ bank.ifsc }}</div>
+    <div class="footer-container">
+        <div class="bottom-grid">
+            <div class="bank-details">
+                <div class="bank-card">
+                    <span class="bank-title">Transfer Funds To</span>
+                    <div class="bank-info-row">
+                        <span class="bank-info-label">Account Name</span>
+                        <span class="bank-info-value">{{ bank.account_name }}</span>
+                    </div>
+                    <div class="bank-info-row">
+                        <span class="bank-info-label">Bank Name</span>
+                        <span class="bank-info-value">{{ bank.bank_name }}</span>
+                    </div>
+                    <div class="bank-info-row">
+                        <span class="bank-info-label">Account No</span>
+                        <span class="bank-info-value font-mono" style="letter-spacing: 1px;">{{ bank.account_number }}</span>
+                    </div>
+                    <div class="bank-info-row">
+                        <span class="bank-info-label">IFSC Code</span>
+                        <span class="bank-info-value font-mono">{{ bank.ifsc }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="summary-box">
+                <table class="summary-table">
+                    {% if invoice.subtotal %}
+                    <tr>
+                        <td class="summary-label">Subtotal</td>
+                        <td class="summary-value font-mono">{{ invoice.subtotal }}</td>
+                    </tr>
+                    {% endif %}
+                    
+                    {% if invoice.gst_amount %}
+                    <tr>
+                        <td class="summary-label">GST ({{ invoice.gst_percentage }}%)</td>
+                        <td class="summary-value font-mono">{{ invoice.gst_amount }}</td>
+                    </tr>
+                    {% endif %}
+                    
+                    <tr class="total-row">
+                        <td class="grand-total-label">Total Amount</td>
+                        <td class="grand-total-value font-mono">{{ invoice.total_amount }}</td>
+                    </tr>
+                    
+                    {% if invoice.paid_amount and invoice.paid_amount != "0" and invoice.paid_amount != 0 %}
+                    <tr>
+                        <td class="summary-label" style="color: #10b981;">Amount Paid</td>
+                        <td class="summary-value font-mono" style="color: #10b981;">-{{ invoice.paid_amount }}</td>
+                    </tr>
+                    {% endif %}
+                    
+                    <tr>
+                        <td class="grand-total-label" style="font-size: 14px; color: var(--brand-orange);">Balance Due</td>
+                        <td class="grand-total-value" style="font-size: 18px; color: var(--brand-orange);">{{ invoice.pending_amount }}</td>
+                    </tr>
+                </table>
+            </div>
         </div>
 
-        <div class="terms">
-            <strong>Terms & Conditions</strong>
-            <p>Thank you for your business. Please make payment by the due date.</p>
+        <div class="terms-section">
+            <div style="font-weight: 700; color: var(--slate-900); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px;">Terms & Conditions</div>
+            <p style="margin: 0;">
+                1. Please quote Invoice Number when making payments.<br>
+                2. Payments are due within the timeframe specified in the payment terms.<br>
+                3. This is a computer generated invoice and does not require a physical signature.<br>
+                4. Thank you for choosing Tarviz Digimart. We value your business!
+            </p>
         </div>
-    </footer>
+        
+        <div style="text-align: center; margin-top: 30px; color: var(--slate-100); font-family: 'Outfit'; font-weight: 800; font-size: 50px; opacity: 0.5; pointer-events: none;">
+            THANK YOU
+        </div>
+    </div>
 </div>
 
 </body>

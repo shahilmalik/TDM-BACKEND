@@ -51,6 +51,8 @@ def build_invoice_context(invoice):
         'payment_mode': invoice.payment_mode.name if invoice.payment_mode else '',
         'payment_terms': invoice.payment_term.name if invoice.payment_term else '',
         'items': items,
+        'gst_percentage': invoice.gst_percentage,
+        'gst_amount': _fmt_money(invoice.gst_amount) if invoice.gst_amount is not None else None,
         'total_amount': _fmt_money(invoice.total_amount) if invoice.total_amount is not None else None,
         'paid_amount': _fmt_money(invoice.paid_amount) if hasattr(invoice, 'paid_amount') else '0.00',
         'pending_amount': _fmt_money(invoice.pending_amount) if hasattr(invoice, 'pending_amount') else '0.00',
