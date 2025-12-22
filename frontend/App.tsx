@@ -12,6 +12,10 @@ import CareersPage from "./pages/CareersPage";
 import BlogPage from "./pages/BlogPage";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
+import {
+  ensureNotificationsRegistered,
+  unregisterNotifications,
+} from "./services/fcm";
 
 function App() {
   const [currentPage, setCurrentPage] = useState("home");
@@ -48,6 +52,17 @@ function App() {
       }
       setAuthStatus({ isLoggedIn: true, role });
       setCurrentPage(role === "admin" ? "admin-dashboard" : "dashboard");
+
+      // Avoid prompting on reload; only auto-register if permission already granted.
+      try {
+        if (typeof Notification !== "undefined") {
+          if (Notification.permission === "granted") {
+            ensureNotificationsRegistered();
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
     }
   }, []);
 
@@ -66,9 +81,19 @@ function App() {
     );
     setTimeout(() => setNotification(null), 3000);
     setCurrentPage(role === "admin" ? "admin-dashboard" : "dashboard");
+
+    // Register push notifications after login (will request permission if needed).
+    ensureNotificationsRegistered();
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Best-effort device token unregister BEFORE removing auth token.
+    try {
+      await unregisterNotifications();
+    } catch (e) {
+      // ignore
+    }
+
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");

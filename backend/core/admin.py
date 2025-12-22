@@ -4,7 +4,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib import messages
 from simple_history.admin import SimpleHistoryAdmin
 
-from core.models import CustomUser, Service, ServiceCategory, ClientProfile
+from core.models import CustomUser, Service, ServiceCategory, ClientProfile, DeviceToken
 
 
 class CustomUserChangeForm(forms.ModelForm):
@@ -152,4 +152,36 @@ class ClientProfileAdmin(SimpleHistoryAdmin):
         }),
     )
     readonly_fields = ("created_at", "updated_at", "client_code")
+
+
+@admin.register(DeviceToken)
+class DeviceTokenAdmin(SimpleHistoryAdmin):
+    list_display = (
+        "id",
+        "user",
+        "platform",
+        "device_id",
+        "token",
+        "last_seen_at",
+        "created_at",
+        "archived",
+    )
+    search_fields = (
+        "user__email",
+        "user__first_name",
+        "user__last_name",
+        "token",
+        "device_id",
+    )
+    list_filter = (
+        "platform",
+        "archived",
+        "created_at",
+        "last_seen_at",
+    )
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "last_seen_at",
+    )
 

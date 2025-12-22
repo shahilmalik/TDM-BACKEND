@@ -288,6 +288,15 @@ class Payment(BaseModel):
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
+            # Capture current status from DB so we can detect status changes.
+            prev_status = None
+            try:
+                invoice_pk = getattr(self, "invoice_id", None) or getattr(getattr(self, "invoice", None), "pk", None)
+                if invoice_pk is not None:
+                    prev_status = Invoice.objects.filter(pk=invoice_pk).values_list("status", flat=True).first()
+            except Exception:
+                prev_status = None
+
             super().save(*args, **kwargs)
             invoice = self.invoice
             paid = invoice.paid_amount
@@ -300,3 +309,36 @@ class Payment(BaseModel):
                 invoice.status = 'paid'
             # save status only (invoice is immutable for other fields)
             Invoice.objects.filter(pk=invoice.pk).update(status=invoice.status)
+
+            # Push + realtime event if status changed
+            try:
+                if prev_status and prev_status != invoice.status:
+                    from kanban.ws import send_to_client_and_user
+                    from core.notifications import notify_invoice_event
+
+                    client_id = getattr(invoice, "client_id", None)
+                    if client_id:
+                        send_to_client_and_user(
+                            client_id,
+                            "invoice_status_changed",
+                            {
+                                "invoice_id": invoice.pk,
+                                "from_status": prev_status,
+                                "to_status": invoice.status,
+                            },
+                        )
+
+                    notify_invoice_event(
+                        invoice=invoice,
+                        title="Invoice status updated",
+                        body=f"Invoice {invoice.invoice_id or invoice.pk} status changed to {invoice.status}",
+                        data={
+                            "event": "invoice_status_changed",
+                            "invoice_id": invoice.pk,
+                            "from_status": prev_status,
+                            "to_status": invoice.status,
+                        },
+                        actor_user_id=getattr(self, "received_by_id", None),
+                    )
+            except Exception:
+                pass

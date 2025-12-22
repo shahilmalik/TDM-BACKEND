@@ -241,7 +241,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
           evt === "comment_added" ||
           evt === "content_item_status_changed" ||
           evt === "content_item_updated" ||
-          evt === "invoice_item_recorded"
+          evt === "invoice_item_recorded" ||
+          evt === "invoice_status_changed"
         ) {
           scheduleRefresh();
         }

@@ -214,6 +214,19 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
+  devices: {
+    register: (data: { token: string; platform?: string; device_id?: string }) =>
+      request<any>("/devices/register/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    unregister: (data: { token: string }) =>
+      request<any>("/devices/unregister/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    list: () => request<any>("/devices/", { method: "GET" }),
+  },
   admin: {
     createEmployee: (data: any) =>
       request<any>("/signup/employee/", {

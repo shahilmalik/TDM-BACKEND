@@ -35,7 +35,6 @@ class ContentItemMoveSerializer(serializers.Serializer):
 
             notify_content_item_event(
                 content_item=item,
-                actor_user_id=getattr(user, "id", None),
                 title="Card moved",
                 body=f"{item.title} moved to {item.column}",
                 data={
@@ -98,7 +97,6 @@ class ContentItemApprovalSerializer(serializers.Serializer):
 
             notify_content_item_event(
                 content_item=item,
-                actor_user_id=getattr(user, "id", None),
                 title="Content updated",
                 body=f"{item.title}: {action}",
                 data={
@@ -504,7 +502,6 @@ class ContentCommentSerializer(serializers.ModelSerializer):
                 is_reply = comment.parent_id is not None
                 notify_content_item_event(
                     content_item=content_item,
-                    actor_user_id=getattr(user, "id", None),
                     title="New reply" if is_reply else "New comment",
                     body=f"{content_item.title}",
                     data={

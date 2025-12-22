@@ -20,6 +20,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from .serializers import DeviceTokenSerializer, DeviceTokenRegisterSerializer
+from core.notifications import FcmMessage, send_fcm_to_tokens
 from authentication.models import OTP
 from django.core.cache import cache
 
@@ -238,6 +239,8 @@ class ClientViewSet(viewsets.ModelViewSet):
     """
     queryset = ClientProfile.objects.select_related('user').all()
     pagination_class = StandardResultsSetPagination
+    permission_classes = [IsAuthenticated]
+    serializer_class = ClientProfileSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -261,54 +264,13 @@ class ClientViewSet(viewsets.ModelViewSet):
 
         return qs
 
-
-class DeviceTokenViewSet(viewsets.ModelViewSet):
-    """Register/list/remove device tokens used for FCM push notifications."""
-
-    serializer_class = DeviceTokenSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return DeviceToken.objects.filter(user=self.request.user, archived=False).order_by(
-            "-last_seen_at"
-        )
-
-    @action(detail=False, methods=["post"], url_path="register")
-    def register(self, request):
-        ser = DeviceTokenRegisterSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        token = ser.validated_data["token"].strip()
-        platform = ser.validated_data.get("platform") or "unknown"
-        device_id = ser.validated_data.get("device_id")
-
-        obj, _created = DeviceToken.objects.update_or_create(
-            token=token,
-            defaults={
-                "user": request.user,
-                "platform": platform,
-                "device_id": device_id,
-                "archived": False,
-            },
-        )
-        return Response(DeviceTokenSerializer(obj).data, status=status.HTTP_200_OK)
-
-    @action(detail=False, methods=["post"], url_path="unregister")
-    def unregister(self, request):
-        token = str(request.data.get("token") or "").strip()
-        if not token:
-            return Response({"detail": "token is required"}, status=status.HTTP_400_BAD_REQUEST)
-        DeviceToken.objects.filter(token=token, user=request.user).update(archived=True)
-        return Response({"success": True}, status=status.HTTP_200_OK)
-
     def get_serializer_class(self):
         if self.action in ('create', 'update', 'partial_update'):
             return ClientCreateUpdateSerializer
         return ClientProfileSerializer
 
     def perform_create(self, serializer):
-        # serializer.create returns a ClientProfile
-        profile = serializer.save()
-        return profile
+        serializer.save()
 
     def perform_destroy(self, instance):
         # delete associated user and profile
@@ -401,3 +363,86 @@ class DeviceTokenViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Failed to persist pending email change'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({'detail': 'Contact email verification successful. The email will be applied when you save your profile.'}, status=status.HTTP_200_OK)
+
+
+class DeviceTokenViewSet(viewsets.ModelViewSet):
+    """Register/list/remove device tokens used for FCM push notifications."""
+
+    serializer_class = DeviceTokenSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return DeviceToken.objects.filter(user=self.request.user, archived=False).order_by(
+            "-last_seen_at"
+        )
+
+    @action(detail=False, methods=["post"], url_path="register")
+    def register(self, request):
+        ser = DeviceTokenRegisterSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        token = ser.validated_data["token"].strip()
+        platform = ser.validated_data.get("platform") or "unknown"
+        device_id = ser.validated_data.get("device_id")
+
+        obj, _created = DeviceToken.objects.update_or_create(
+            token=token,
+            defaults={
+                "user": request.user,
+                "platform": platform,
+                "device_id": device_id,
+                "archived": False,
+            },
+        )
+        return Response(DeviceTokenSerializer(obj).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="unregister")
+    def unregister(self, request):
+        token = str(request.data.get("token") or "").strip()
+        if not token:
+            return Response({"detail": "token is required"}, status=status.HTTP_400_BAD_REQUEST)
+        DeviceToken.objects.filter(token=token, user=request.user).update(archived=True)
+        return Response({"success": True}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="broadcast-test")
+    def broadcast_test(self, request):
+        """Send a test push notification to all registered devices.
+
+        Restricted to staff/superadmin/manager users.
+        """
+
+        user_type = getattr(request.user, "type", None)
+        if not (
+            getattr(request.user, "is_staff", False)
+            or getattr(request.user, "is_superuser", False)
+            or user_type in {"superadmin", "manager"}
+        ):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        title = str(request.data.get("title") or "TDM Test Notification").strip() or "TDM Test Notification"
+        body = str(request.data.get("body") or "If you received this, FCM delivery is working.").strip() or "If you received this, FCM delivery is working."
+
+        extra_data = request.data.get("data")
+        if not isinstance(extra_data, dict):
+            extra_data = {}
+
+        tokens = list(DeviceToken.objects.filter(archived=False).values_list("token", flat=True))
+        send_fcm_to_tokens(
+            tokens,
+            FcmMessage(
+                title=title,
+                body=body,
+                data={
+                    "kind": "broadcast_test",
+                    "requested_by": str(getattr(request.user, "id", "")),
+                    **extra_data,
+                },
+            ),
+        )
+
+        return Response(
+            {
+                "success": True,
+                "sent_to_tokens": len(tokens),
+            },
+            status=status.HTTP_200_OK,
+        )

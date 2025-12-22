@@ -4,12 +4,127 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 import requests
+import logging
+import os
 from django.conf import settings
 
 from core.models import DeviceToken
 
-
 FCM_LEGACY_ENDPOINT = "https://fcm.googleapis.com/fcm/send"
+
+
+def _normalize_fcm_data(data: dict[str, Any] | None) -> dict[str, str]:
+    """FCM requires all `message.data` values to be strings.
+
+    We coerce primitives to `str`, JSON-encode dict/list, and drop None values.
+    """
+
+    if not data:
+        return {}
+
+    normalized: dict[str, str] = {}
+    for k, v in data.items():
+        if v is None:
+            continue
+        key = str(k)
+        if isinstance(v, str):
+            normalized[key] = v
+        elif isinstance(v, (int, float, bool)):
+            normalized[key] = str(v)
+        elif isinstance(v, (dict, list, tuple)):
+            try:
+                import json
+
+                normalized[key] = json.dumps(v, ensure_ascii=False)
+            except Exception:
+                normalized[key] = str(v)
+        else:
+            normalized[key] = str(v)
+    return normalized
+
+
+def _get_fcm_project_id() -> str | None:
+    pid = (
+        os.getenv("FCM_PROJECT_ID")
+        or getattr(settings, "FCM_PROJECT_ID", None)
+        or os.getenv("FIREBASE_PROJECT_ID")
+        or getattr(settings, "FIREBASE_PROJECT_ID", None)
+    )
+    if not pid:
+        return None
+    p = str(pid).strip()
+    return p or None
+
+
+def _get_service_account_file() -> str | None:
+    # Prefer an explicit env var; fall back to standard Google env var.
+    p = os.getenv("FCM_SERVICE_ACCOUNT_FILE") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if not p:
+        return None
+    pp = str(p).strip().strip('"').strip("'")
+    return pp or None
+
+
+def _get_fcm_v1_access_token() -> str | None:
+    """Get OAuth2 access token for Firebase Cloud Messaging HTTP v1."""
+    try:
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import Request
+    except Exception:
+        return None
+
+    sa_file = _get_service_account_file()
+    if not sa_file:
+        return None
+
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            sa_file,
+            scopes=["https://www.googleapis.com/auth/firebase.messaging"],
+        )
+        creds.refresh(Request())
+        return str(creds.token) if getattr(creds, "token", None) else None
+    except Exception:
+        logging.exception("FCM v1: failed to load/refresh service account credentials")
+        return None
+
+
+def _send_fcm_v1_to_token(*, token: str, message: "FcmMessage") -> None:
+    project_id = _get_fcm_project_id()
+    if not project_id:
+        logging.warning("FCM v1: missing FCM_PROJECT_ID; skipping push")
+        return
+
+    access_token = _get_fcm_v1_access_token()
+    if not access_token:
+        logging.warning(
+            "FCM v1: missing service account credentials; set FCM_SERVICE_ACCOUNT_FILE (or GOOGLE_APPLICATION_CREDENTIALS)"
+        )
+        return
+
+    url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    payload = {
+        "message": {
+            "token": token,
+            "notification": {"title": message.title, "body": message.body},
+            "data": _normalize_fcm_data(message.data),
+            # webpush settings can be added later if needed
+        }
+    }
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=8)
+        if not resp.ok:
+            logging.warning(
+                "FCM v1: send failed status=%s body=%s",
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+    except Exception:
+        logging.exception("FCM v1: send exception")
 
 
 @dataclass(frozen=True)
@@ -35,12 +150,24 @@ def _chunked(seq: list[str], size: int) -> Iterable[list[str]]:
 def send_fcm_to_tokens(tokens: list[str], message: FcmMessage) -> None:
     """Send an FCM notification to a list of registration tokens.
 
-    Uses the legacy HTTP API with the server key stored in settings.FCM_API_KEY.
+    Prefer FCM HTTP v1 (service account). Falls back to legacy key-based API if configured.
     """
+    if not tokens:
+        logging.info("FCM: no device tokens to notify")
+        return
+
+    # Prefer HTTP v1 if service account + project id are configured.
+    if _get_fcm_project_id() and _get_service_account_file():
+        for t in tokens:
+            _send_fcm_v1_to_token(token=t, message=message)
+        return
+
+    # Legacy fallback.
     api_key = _get_fcm_api_key()
     if not api_key:
-        return
-    if not tokens:
+        logging.warning(
+            "FCM: no v1 credentials and settings.FCM_API_KEY missing; skipping push"
+        )
         return
 
     headers = {
@@ -60,7 +187,27 @@ def send_fcm_to_tokens(tokens: list[str], message: FcmMessage) -> None:
             "priority": "high",
         }
         try:
-            requests.post(FCM_LEGACY_ENDPOINT, json=payload, headers=headers, timeout=5)
+            resp = requests.post(
+                FCM_LEGACY_ENDPOINT,
+                json=payload,
+                headers=headers,
+                timeout=5,
+            )
+            if not resp.ok:
+                logging.warning(
+                    "FCM: send failed status=%s body=%s",
+                    resp.status_code,
+                    (resp.text or "")[:500],
+                )
+                continue
+            try:
+                body = resp.json()
+                failure = body.get("failure")
+                if failure:
+                    logging.warning("FCM: send returned failure=%s body=%s", failure, body)
+            except Exception:
+                # Response is sometimes not JSON.
+                pass
         except Exception:
             # Do not break core flows if push fails.
             pass

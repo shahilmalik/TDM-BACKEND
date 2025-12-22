@@ -17,6 +17,10 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Transparent 1x1 icon to avoid showing the site's logo/favicon.
+const TRANSPARENT_ICON =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6X9o0kAAAAASUVORK5CYII=";
+
 messaging.onBackgroundMessage(function (payload) {
   try {
     const notification = payload.notification || {};
@@ -24,6 +28,7 @@ messaging.onBackgroundMessage(function (payload) {
     const options = {
       body: notification.body || "",
       data: payload.data || {},
+      icon: TRANSPARENT_ICON,
     };
     self.registration.showNotification(title, options);
   } catch (e) {
