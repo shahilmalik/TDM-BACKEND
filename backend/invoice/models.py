@@ -114,6 +114,9 @@ class Invoice(BaseModel):
     # payments aggregated from Payment records; status reflects payment state
     status = models.CharField(max_length=20, choices=INVOICE_STATUS, default='unpaid')
 
+    # pipeline start tracking
+    started_at = models.DateTimeField(blank=True, null=True)
+
     # authorized_by: the user who created/authorized the invoice
     authorized_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='authorized_invoices')
 

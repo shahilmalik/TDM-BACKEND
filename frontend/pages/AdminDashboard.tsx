@@ -94,10 +94,15 @@ interface AdminDashboardProps {
   onNavigate?: (page: string, subPage?: string) => void;
 }
 
-// Extended interface for invoice creation items to hold backend IDs
-interface CreateInvoiceItem extends AdminInvoiceItem {
+type InvoiceNumberInput = number | "";
+
+// Invoice creation items: allow temporary empty string for numeric inputs
+type CreateInvoiceItem = Omit<AdminInvoiceItem, "quantity" | "price" | "total"> & {
   servicePk?: number;
-}
+  quantity: InvoiceNumberInput;
+  price: InvoiceNumberInput;
+  total: number;
+};
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogout,
@@ -276,6 +281,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   } | null>(null);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(
+    null
+  );
+  const [invoiceHistoryById, setInvoiceHistoryById] = useState<
+    Record<
+      string,
+      {
+        loading: boolean;
+        error: string | null;
+        events: Array<{
+          type: string;
+          title: string;
+          ts: string | null;
+          meta?: Record<string, any>;
+        }>;
+      }
+    >
+  >({});
+
   // Meta State
   const [metaTokens, setMetaTokens] = useState<MetaToken[]>([]);
   const [metaPages, setMetaPages] = useState<MetaPage[]>([]);
@@ -430,7 +454,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   >(null);
 
   // Invoice Form State
-  const emptyInvoiceState = {
+  const emptyInvoiceState: {
+    clientId: string;
+    date: string;
+    dueDate: string;
+    paymentMode: string;
+    paymentTerms: string;
+    gstPercentage: InvoiceNumberInput;
+    items: CreateInvoiceItem[];
+  } = {
     clientId: "",
     date: new Date().toISOString().split("T")[0],
     dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)
@@ -439,7 +471,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     paymentMode: "",
     paymentTerms: "",
     gstPercentage: 0,
-    items: [] as CreateInvoiceItem[],
+    items: [],
   };
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoiceState);
 
@@ -1265,6 +1297,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           invoiceNumber: inv.invoice_id,
           date: inv.date,
           startDate: inv.start_date ?? null,
+          startedAt: inv.started_at ?? null,
           dueDate: inv.due_date || inv.date,
           clientId: inv.client?.id || "",
           clientName: inv.client
@@ -1331,6 +1364,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           invoiceNumber: inv.invoice_id,
           date: inv.date,
           startDate: inv.start_date ?? null,
+          startedAt: inv.started_at ?? null,
           dueDate: inv.due_date || inv.date,
           clientId: inv.client?.id || "",
           clientName: inv.client
@@ -1991,12 +2025,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       payment_mode: parseInt(invoiceForm.paymentMode),
       payment_term: parseInt(invoiceForm.paymentTerms),
       start_date: invoiceForm.date,
-      gst_percentage: invoiceForm.gstPercentage,
+      gst_percentage: Number(invoiceForm.gstPercentage || 0),
       items: invoiceForm.items.map((item) => ({
         service: item.servicePk,
         description: item.description || item.name,
-        unit_price: item.price.toString(),
-        quantity: item.quantity,
+        unit_price: String(item.price || 0),
+        quantity: Number(item.quantity || 0),
       })),
     };
     try {
@@ -2019,6 +2053,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         type: "error",
         text: `Failed to preview: ${e?.message || "Failed."}`,
       });
+    }
+  };
+
+  const toggleInvoiceExpanded = async (inv: AdminInvoice) => {
+    const id = String(inv.id);
+    const next = expandedInvoiceId === id ? null : id;
+    setExpandedInvoiceId(next);
+
+    if (!next) return;
+    if (invoiceHistoryById[next]?.loading) return;
+    if (invoiceHistoryById[next]?.events?.length) return;
+
+    setInvoiceHistoryById((prev) => ({
+      ...prev,
+      [next]: { loading: true, error: null, events: [] },
+    }));
+
+    try {
+      const res = await api.invoice.history(next);
+      const events = Array.isArray((res as any)?.events) ? (res as any).events : [];
+      setInvoiceHistoryById((prev) => ({
+        ...prev,
+        [next]: { loading: false, error: null, events },
+      }));
+    } catch (e: any) {
+      setInvoiceHistoryById((prev) => ({
+        ...prev,
+        [next]: {
+          loading: false,
+          error: e?.message || "Failed to load history.",
+          events: [],
+        },
+      }));
     }
   };
 
@@ -2045,11 +2112,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const calculateInvoiceTotals = () => {
-    const subTotal = invoiceForm.items.reduce(
-      (acc, item) => acc + item.price * item.quantity,
-      0
-    );
-    const taxTotal = subTotal * (invoiceForm.gstPercentage / 100);
+    const gst = Number(invoiceForm.gstPercentage || 0);
+    const subTotal = invoiceForm.items.reduce((acc, item) => {
+      const price = Number(item.price || 0);
+      const quantity = Number(item.quantity || 0);
+      return acc + price * quantity;
+    }, 0);
+    const taxTotal = subTotal * (gst / 100);
     const grandTotal = subTotal + taxTotal;
     return { subTotal, taxTotal, grandTotal };
   };
@@ -2074,9 +2143,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } else {
       (item as any)[field] = value;
     }
-    const basePrice = Number(item.price) * Number(item.quantity);
+    const gst = Number(invoiceForm.gstPercentage || 0);
+    const basePrice = Number(item.price || 0) * Number(item.quantity || 0);
     item.total =
-      basePrice + basePrice * (Number(invoiceForm.gstPercentage) / 100);
+      basePrice + basePrice * (gst / 100);
     newItems[index] = item;
     setInvoiceForm((prev) => ({ ...prev, items: newItems }));
   };
@@ -3017,97 +3087,267 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {visibleInvoices.map((inv) => (
-                        <tr
-                          key={inv.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => handlePreviewInvoice(Number(inv.id))}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              handlePreviewInvoice(Number(inv.id));
-                            }
-                          }}
-                          className="hover:bg-slate-50 transition-colors cursor-pointer"
-                        >
-                          <td className="px-6 py-4">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleInvoiceSelection(inv.id);
+                      {visibleInvoices.map((inv) => {
+                        const rowId = String(inv.id);
+                        const isExpanded = expandedInvoiceId === rowId;
+                        const historyState = invoiceHistoryById[rowId];
+                        return (
+                          <React.Fragment key={inv.id}>
+                            <tr
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleInvoiceExpanded(inv)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  toggleInvoiceExpanded(inv);
+                                }
                               }}
-                              className="text-slate-500 hover:text-slate-700"
-                              title="Select"
+                              className={
+                                "transition-colors cursor-pointer " +
+                                (isExpanded ? "bg-slate-50" : "hover:bg-slate-50")
+                              }
                             >
-                              {selectedInvoiceIds.includes(inv.id) ? (
-                                <CheckSquare size={18} />
-                              ) : (
-                                <Square size={18} />
-                              )}
-                            </button>
-                          </td>
-                          <td className="px-6 py-4 font-mono text-sm text-slate-500">
-                            {inv.invoiceNumber}
-                          </td>
-                          <td className="px-6 py-4 text-slate-800 font-medium">
-                            {inv.clientName}
-                          </td>
-                          <td className="px-6 py-4 text-slate-800">
-                            {inv.date}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(
-                                (inv as any).statusValue
-                              )}`}
-                            >
-                              {inv.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-slate-800 font-bold text-right">
-                            ₹{Number(inv.grandTotal || 0).toLocaleString()}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            {(inv as any).statusValue !== "paid" &&
-                              (inv as any).statusValue !== "cancelled" && (
+                              <td className="px-6 py-4">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openRecordPaymentModal(inv);
+                                    toggleInvoiceSelection(inv.id);
+                                  }}
+                                  className="text-slate-500 hover:text-slate-700"
+                                  title="Select"
+                                >
+                                  {selectedInvoiceIds.includes(inv.id) ? (
+                                    <CheckSquare size={18} />
+                                  ) : (
+                                    <Square size={18} />
+                                  )}
+                                </button>
+                              </td>
+                              <td className="px-6 py-4 font-mono text-sm text-slate-500">
+                                {inv.invoiceNumber}
+                              </td>
+                              <td className="px-6 py-4 text-slate-800 font-medium">
+                                {inv.clientName}
+                              </td>
+                              <td className="px-6 py-4 text-slate-800">{inv.date}</td>
+                              <td className="px-6 py-4">
+                                <span
+                                  className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(
+                                    (inv as any).statusValue
+                                  )}`}
+                                >
+                                  {inv.status}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-slate-800 font-bold text-right">
+                                ₹{Number(inv.grandTotal || 0).toLocaleString()}
+                              </td>
+                              <td className="px-6 py-4 text-right whitespace-nowrap">
+                                {(inv as any).statusValue !== "paid" &&
+                                  (inv as any).statusValue !== "cancelled" && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openRecordPaymentModal(inv);
+                                      }}
+                                      className="font-bold text-sm text-slate-700 hover:underline mr-4"
+                                    >
+                                      <PaymentIcon size={16} className="inline mr-1" />
+                                      Pay
+                                    </button>
+                                  )}
+
+                                {(inv as any).statusValue === "paid" && inv.hasPipeline && (
+                                  inv.startedAt ? (
+                                    <span
+                                      className="font-bold text-sm text-slate-400 mr-4"
+                                      title={
+                                        inv.startedAt
+                                          ? `Started at ${new Date(inv.startedAt).toLocaleString()}`
+                                          : "Started"
+                                      }
+                                    >
+                                      Started
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartPipeline(inv);
+                                      }}
+                                      title="Start pipeline"
+                                      className="font-bold text-sm text-slate-700 hover:underline mr-4"
+                                    >
+                                      <Play size={16} className="inline mr-1" /> Start
+                                    </button>
+                                  )
+                                )}
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePreviewInvoice(Number(inv.id));
                                   }}
                                   className="font-bold text-sm text-slate-700 hover:underline mr-4"
+                                  title="Preview"
                                 >
-                                  <PaymentIcon size={16} className="inline mr-1" />
-                                  Pay
+                                  Preview
                                 </button>
-                              )}
 
-                            {(inv as any).statusValue === "paid" && inv.hasPipeline && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStartPipeline(inv);
-                                }}
-                                title="Start pipeline"
-                                className="font-bold text-sm text-slate-700 hover:underline mr-4"
-                              >
-                                <Play size={16} className="inline mr-1" /> Start
-                              </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadInvoice(
+                                      Number(inv.id),
+                                      inv.invoiceNumber
+                                    );
+                                  }}
+                                  className="font-bold text-sm text-[#6C5CE7] hover:underline"
+                                >
+                                  <Download size={16} className="inline mr-1" /> PDF
+                                </button>
+                              </td>
+                            </tr>
+
+                            {isExpanded && (
+                              <tr className="bg-white">
+                                <td colSpan={7} className="px-6 pb-6">
+                                  <div className="mt-3 bg-slate-50 border border-slate-200 rounded-2xl p-5">
+                                    <div className="flex items-center justify-between mb-4">
+                                      <div>
+                                        <h4 className="font-extrabold text-slate-800">
+                                          Invoice History
+                                        </h4>
+                                        <p className="text-xs text-slate-500">
+                                          {inv.invoiceNumber} • {inv.clientName}
+                                        </p>
+                                      </div>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handlePreviewInvoice(Number(inv.id));
+                                        }}
+                                        className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold hover:bg-slate-50"
+                                        type="button"
+                                      >
+                                        Preview
+                                      </button>
+                                    </div>
+
+                                    {historyState?.loading && (
+                                      <div className="text-sm text-slate-500">
+                                        Loading history...
+                                      </div>
+                                    )}
+
+                                    {historyState?.error && (
+                                      <div className="text-sm text-red-600">
+                                        {historyState.error}
+                                      </div>
+                                    )}
+
+                                    {!historyState?.loading &&
+                                      !historyState?.error && (
+                                        <div className="space-y-3">
+                                          {(historyState?.events || []).length ===
+                                          0 ? (
+                                            <div className="text-sm text-slate-500">
+                                              No history yet.
+                                            </div>
+                                          ) : (
+                                            <div className="space-y-3">
+                                              {(historyState?.events || []).map(
+                                                (ev, idx) => {
+                                                  const when = ev.ts
+                                                    ? new Date(ev.ts).toLocaleString()
+                                                    : "—";
+                                                  const isPayment =
+                                                    ev.type === "payment";
+                                                  const isPipeline =
+                                                    ev.type ===
+                                                    "pipeline_started";
+
+                                                  const dotClass = isPayment
+                                                    ? "bg-emerald-500"
+                                                    : isPipeline
+                                                    ? "bg-[#6C5CE7]"
+                                                    : "bg-slate-400";
+
+                                                  const amount =
+                                                    isPayment && ev.meta?.amount
+                                                      ? `₹${Number(
+                                                          ev.meta.amount
+                                                        ).toLocaleString()}`
+                                                      : null;
+
+                                                  return (
+                                                    <div
+                                                      key={`${ev.type}-${idx}`}
+                                                      className="flex gap-3"
+                                                    >
+                                                      <div className="flex flex-col items-center">
+                                                        <div
+                                                          className={`w-3 h-3 rounded-full ${dotClass}`}
+                                                        />
+                                                        {idx !==
+                                                          (historyState?.events || [])
+                                                            .length -
+                                                            1 && (
+                                                          <div className="w-px flex-1 bg-slate-200" />
+                                                        )}
+                                                      </div>
+                                                      <div className="flex-1">
+                                                        <div className="flex items-center justify-between gap-4">
+                                                          <div className="font-bold text-slate-800 text-sm">
+                                                            {ev.title}
+                                                            {amount ? (
+                                                              <span className="ml-2 text-emerald-600">
+                                                                {amount}
+                                                              </span>
+                                                            ) : null}
+                                                          </div>
+                                                          <div className="text-xs text-slate-400 font-medium">
+                                                            {when}
+                                                          </div>
+                                                        </div>
+                                                        {isPayment && (
+                                                          <div className="text-xs text-slate-500 mt-1">
+                                                            {(ev.meta?.payment_mode &&
+                                                              `Mode: ${ev.meta.payment_mode}`) ||
+                                                              ""}
+                                                            {ev.meta?.reference
+                                                              ? ` • Ref: ${ev.meta.reference}`
+                                                              : ""}
+                                                            {ev.meta?.received_by
+                                                              ? ` • By: ${ev.meta.received_by}`
+                                                              : ""}
+                                                          </div>
+                                                        )}
+                                                        {isPipeline &&
+                                                          typeof ev.meta
+                                                            ?.created_items ===
+                                                            "number" && (
+                                                            <div className="text-xs text-slate-500 mt-1">
+                                                              Created items: {ev.meta.created_items}
+                                                            </div>
+                                                          )}
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                }
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                  </div>
+                                </td>
+                              </tr>
                             )}
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadInvoice(Number(inv.id), inv.invoiceNumber);
-                              }}
-                              className="font-bold text-sm text-[#6C5CE7] hover:underline"
-                            >
-                              <Download size={16} className="inline mr-1" /> PDF
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
 
@@ -3175,7 +3415,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onChange={(e) =>
                         setInvoiceForm((p) => ({
                           ...p,
-                          gstPercentage: Number(e.target.value),
+                          gstPercentage:
+                            e.target.value === "" ? "" : Number(e.target.value),
                         }))
                       }
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
@@ -3314,7 +3555,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               updateInvoiceItem(
                                 idx,
                                 "quantity",
-                                Number(e.target.value)
+                                e.target.value === "" ? "" : Number(e.target.value)
                               )
                             }
                             className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none"
@@ -3331,7 +3572,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               updateInvoiceItem(
                                 idx,
                                 "price",
-                                Number(e.target.value)
+                                e.target.value === "" ? "" : Number(e.target.value)
                               )
                             }
                             className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none"

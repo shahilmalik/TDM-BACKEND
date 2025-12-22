@@ -214,6 +214,7 @@ export interface AdminInvoice {
   invoiceNumber: string;
   date: string;
   startDate?: string | null;
+  startedAt?: string | null;
   dueDate: string;
   clientId: string;
   clientName: string;

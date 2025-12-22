@@ -408,6 +408,24 @@ export const api = {
         `/invoice/invoices/${id}/preview/`,
         { method: "GET" }
       ),
+
+    history: (id: number | string) =>
+      request<{
+        success: boolean;
+        invoice: {
+          id: number | string;
+          invoice_id: string;
+          date?: string;
+          due_date?: string;
+          status?: string;
+        };
+        events: Array<{
+          type: "created" | "payment" | "pipeline_started" | string;
+          title: string;
+          ts: string | null;
+          meta?: Record<string, any>;
+        }>;
+      }>(`/invoice/invoices/${id}/history/`, { method: "GET" }),
     downloadPdf: (id: number | string) =>
       request<Blob>(`/invoice/invoices/${id}/generate_pdf/`, { method: "GET" }),
 

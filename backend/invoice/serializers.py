@@ -64,6 +64,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     status_label = serializers.SerializerMethodField()
     has_pipeline = serializers.SerializerMethodField()
     sender_business_info_id = serializers.IntegerField(write_only=True, required=False)
+    started_at = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = Invoice
@@ -71,6 +72,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'id', 'invoice_id', 'client', 'date', 'start_date', 'due_date', 'items',
             'gst_percentage', 'gst_amount', 'total_amount', 'paid_amount', 'pending_amount',
             'status', 'status_label', 'payment_mode', 'payment_term', 'authorized_by', 'has_pipeline',
+            'started_at',
             'sender_name', 'sender_logo', 'sender_address', 'sender_phone', 'sender_email',
             'sender_bank_account_name', 'sender_bank_account_number', 'sender_bank_name', 'sender_ifsc',
             'sender_business_info_id',

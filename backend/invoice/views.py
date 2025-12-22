@@ -232,11 +232,126 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                     created += 1
                     created_titles.append(title)
 
+        # Mark invoice as started (first time only).
+        if invoice.started_at is None:
+            try:
+                invoice.started_at = timezone.now()
+                invoice.save(update_fields=["started_at"])
+            except Exception:
+                # best-effort
+                pass
+
         return Response(
             {
                 "success": True,
                 "created": created,
                 "titles": created_titles,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=['get'])
+    def history(self, request, pk=None):
+        """Return a timeline for an invoice.
+
+        Events:
+        - Invoice created
+        - Payments recorded
+        - Pipeline started (derived: ContentItems exist for this invoice)
+        """
+        invoice = self.get_object()
+
+        if request.user.type == 'client' and invoice.client != request.user:
+            return Response(
+                {"success": False, "error": "You don't have permission to view this invoice"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Payments
+        payments_qs = invoice.payments.select_related('payment_mode', 'received_by').order_by('paid_at', 'id')
+        payments = PaymentSerializer(payments_qs, many=True).data
+
+        # Pipeline started timestamp is stored on invoice.
+        pipeline_started_at = getattr(invoice, 'started_at', None)
+        pipeline_started = pipeline_started_at is not None
+        pipeline_created_count = 0
+        if pipeline_started:
+            try:
+                pipeline_created_count = ContentItem.objects.filter(invoice=invoice).count()
+            except Exception:
+                pipeline_created_count = 0
+
+        events = []
+
+        created_at = getattr(invoice, 'created_at', None)
+        events.append(
+            {
+                "type": "created",
+                "title": "Invoice created",
+                "ts": created_at.isoformat() if created_at else None,
+                "meta": {
+                    "invoice_id": invoice.pk,
+                    "invoice_number": invoice.invoice_id,
+                },
+            }
+        )
+
+        for p in payments:
+            received_by = None
+            try:
+                rb = p.get('received_by')
+                if isinstance(rb, dict):
+                    first = (rb.get('first_name') or '').strip()
+                    last = (rb.get('last_name') or '').strip()
+                    name = (f"{first} {last}").strip()
+                    received_by = name or rb.get('email') or rb.get('id')
+            except Exception:
+                received_by = None
+
+            events.append(
+                {
+                    "type": "payment",
+                    "title": "Payment recorded",
+                    "ts": p.get('paid_at'),
+                    "meta": {
+                        "payment_id": p.get('id'),
+                        "amount": str(p.get('amount')),
+                        "reference": p.get('reference'),
+                        "payment_mode": (p.get('payment_mode_detail') or {}).get('name') if isinstance(p.get('payment_mode_detail'), dict) else None,
+                        "received_by": received_by,
+                    },
+                }
+            )
+
+        if pipeline_started:
+            events.append(
+                {
+                    "type": "pipeline_started",
+                    "title": "Pipeline started",
+                    "ts": pipeline_started_at.isoformat() if pipeline_started_at else None,
+                    "meta": {
+                        "created_items": pipeline_created_count,
+                    },
+                }
+            )
+
+        # Sort: unknown timestamps last
+        def _sort_key(e):
+            return (e.get('ts') is None, e.get('ts') or '')
+
+        events = sorted(events, key=_sort_key)
+
+        return Response(
+            {
+                "success": True,
+                "invoice": {
+                    "id": invoice.pk,
+                    "invoice_id": invoice.invoice_id,
+                    "date": getattr(invoice, 'date', None),
+                    "due_date": getattr(invoice, 'due_date', None),
+                    "status": getattr(invoice, 'status', None),
+                },
+                "events": events,
             },
             status=status.HTTP_200_OK,
         )
