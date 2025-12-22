@@ -1587,12 +1587,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setAdminMessage({ type: "error", text: "Service name is required." });
       return;
     }
-    if (newService.isPipeline && newService.platforms.length === 0) {
-      setAdminMessage({ type: "error", text: "Select at least one platform." });
-      return;
+
+    if (newService.isPipeline) {
+      const selectedPlatforms = Array.isArray((newService as any).platforms)
+        ? ((newService as any).platforms as string[])
+        : [];
+      if (selectedPlatforms.length === 0) {
+        setAdminMessage({ type: "error", text: "Select at least one platform." });
+        return;
+      }
+      if (selectedPlatforms.includes("other") && !String((newService as any).otherPlatform || "").trim()) {
+        setAdminMessage({ type: "error", text: "Type the platform name for Other." });
+        return;
+      }
     }
+
     try {
-      const payload = {
+      const payload: any = {
         name: newService.name,
         description: newService.description,
         price: Number(newService.price),
@@ -1601,12 +1612,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         is_active: true,
         is_pipeline: newService.isPipeline,
         pipeline_config: newService.isPipeline ? newService.pipelineConfig : [],
-        platforms: newService.platforms,
-        other_platform: newService.otherPlatform,
       };
-      if (editingServiceId)
-        await api.services.update(editingServiceId, payload);
+
+      if (newService.isPipeline) {
+        payload.platforms = (newService as any).platforms || [];
+        payload.other_platform = (newService as any).otherPlatform || "";
+      }
+
+      if (editingServiceId) await api.services.update(editingServiceId, payload);
       else await api.services.create(payload);
+
       fetchServicesAndCategories();
       resetServicesList();
       setIsServiceModalOpen(false);
@@ -1621,9 +1636,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         pipelineConfig: [{ prefix: "", count: 0 }],
         platforms: [],
         otherPlatform: "",
-      });
+      } as any);
       setEditingServiceId(null);
-      setAdminMessage({ type: "success", text: editingServiceId ? "Service updated successfully." : "Service created successfully." });
+      setAdminMessage({
+        type: "success",
+        text: editingServiceId
+          ? "Service updated successfully."
+          : "Service created successfully.",
+      });
     } catch (error: any) {
       setAdminMessage({ type: "error", text: error?.message || "Failed." });
     }
@@ -2709,6 +2729,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
                         <td className="px-6 py-4">
                           <span
+                            className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                              c.isActive
+                                ? "bg-green-50 text-green-600 border-green-200"
+                                : "bg-slate-50 text-slate-600 border-slate-200"
+                            }`}
+                          >
+                            {c.isActive ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                      </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {clientsList.length === 0 && (
+                <div className="p-12 text-center text-slate-400">
+                  <UserCircle size={44} className="mx-auto mb-3 opacity-40" />
+                  No clients yet.
+                </div>
+              )}
+
+              <div ref={clientsListSentinelRef} />
             </div>
           </div>
         )}
@@ -2744,6 +2786,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       hsn: "",
                       isPipeline: false,
                       pipelineConfig: [{ prefix: "", count: 0 }],
+                      platforms: [],
+                      otherPlatform: "",
                     });
                     setIsServiceModalOpen(true);
                   }}
@@ -4930,6 +4974,65 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="mt-4">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                      Platforms
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {PLATFORM_OPTIONS.map((opt) => {
+                        const checked = (newService.platforms || []).includes(opt.value);
+                        return (
+                          <label
+                            key={opt.value}
+                            className={
+                              "px-3 py-2 rounded-xl border text-sm font-bold cursor-pointer select-none flex items-center gap-2 " +
+                              (checked
+                                ? "bg-[#6C5CE7] text-white border-[#6C5CE7]"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")
+                            }
+                          >
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={checked}
+                              onChange={(e) => {
+                                const next = new Set(newService.platforms || []);
+                                if (e.target.checked) next.add(opt.value);
+                                else next.delete(opt.value);
+                                setNewService((p) => ({ ...p, platforms: Array.from(next) }));
+                              }}
+                            />
+                            {opt.value === "other" ? (
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-current text-xs">
+                                +
+                              </span>
+                            ) : null}
+                            {opt.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    {(newService.platforms || []).includes("other") && (
+                      <div className="mt-2">
+                        <input
+                          value={newService.otherPlatform || ""}
+                          onChange={(e) =>
+                            setNewService((p) => ({ ...p, otherPlatform: e.target.value }))
+                          }
+                          placeholder="Type platform name"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                        />
+                      </div>
+                    )}
+
+                    {newService.isPipeline && (newService.platforms || []).length === 0 && (
+                      <div className="mt-2 text-xs text-red-600 font-semibold">
+                        Select at least one platform.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

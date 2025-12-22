@@ -71,6 +71,24 @@ class ServiceSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('service_id',)
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+
+        is_pipeline = attrs.get('is_pipeline', False)
+        if is_pipeline:
+            platforms = attrs.get('platforms')
+            if not isinstance(platforms, list) or len(platforms) == 0:
+                raise serializers.ValidationError({
+                    'platforms': 'Select at least one platform for pipeline services.'
+                })
+            if 'other' in platforms:
+                other = (attrs.get('other_platform') or '').strip()
+                if not other:
+                    raise serializers.ValidationError({
+                        'other_platform': 'Please type the platform name for "Other".'
+                    })
+        return attrs
+
     def validate_category_id(self, value):
         if not value:
             raise serializers.ValidationError("Category is required.")

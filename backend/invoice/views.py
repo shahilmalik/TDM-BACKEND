@@ -237,6 +237,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                         invoice=invoice,
                         created_by=_get_system_user(),
                         due_date=invoice.start_date or None,
+                        platforms=(getattr(svc, 'platforms', None) or []),
                     )
                     created += 1
                     created_titles.append(title)

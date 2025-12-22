@@ -298,4 +298,7 @@ export interface BackendService {
   is_active: boolean;
   is_pipeline?: boolean;
   pipeline_config?: PipelineConfigItem[];
+  // pipeline platforms (for pipeline services)
+  platforms?: string[];
+  other_platform?: string;
 }

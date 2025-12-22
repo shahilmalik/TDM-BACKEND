@@ -92,6 +92,11 @@ class Service(BaseModel):
     is_pipeline = models.BooleanField(default=False)
     pipeline_config = models.JSONField(default=list, blank=True)
 
+    # Platforms relevant for pipeline services (e.g. instagram/facebook). If "other" is selected,
+    # free-text can be stored in other_platform.
+    platforms = models.JSONField(default=list, blank=True)
+    other_platform = models.CharField(max_length=100, blank=True, null=True)
+
     @staticmethod
     def generate_service_id(category):
         """Generate next service ID for a given category (e.g., SOC001, SOC002)."""
