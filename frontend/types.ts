@@ -124,10 +124,10 @@ export interface PipelinePost {
     last_name?: string;
   } | null;
   client?: {
+    id?: string | number;
     first_name: string;
     last_name?: string;
   } | null;
-  media_assets?: Array<{ file: string }>;
   history?: HistoryEntry[];
 
   unread_comments_count?: number;

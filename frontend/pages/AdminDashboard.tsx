@@ -1043,6 +1043,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             : undefined,
           client: item.client
             ? {
+                id: item.client.id,
                 first_name: item.client.first_name,
                 last_name: item.client.last_name,
               }

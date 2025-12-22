@@ -148,6 +148,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
         media_assets: Array.isArray(item.media_assets)
           ? item.media_assets
           : undefined,
+        client: item.client
+          ? {
+              id: item.client.id,
+              first_name: item.client.first_name,
+              last_name: item.client.last_name,
+            }
+          : undefined,
       }));
       setPipelinePosts(mapped);
     } catch (e) {

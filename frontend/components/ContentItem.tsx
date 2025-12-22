@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Instagram,
   Facebook,
@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { PipelinePost, Comment, HistoryEntry } from "../types";
 import { api } from "../services/api";
+import { connectEventsSocket } from "../services/eventsSocket";
 
 interface ContentItemProps {
   post: PipelinePost;
@@ -61,6 +62,7 @@ const ContentItem: React.FC<ContentItemProps> = ({
         : []) || [];
 
   const [comments, setComments] = useState<Comment[]>(seedComments);
+  const commentsEndRef = useRef<HTMLDivElement | null>(null);
 
   const [history, setHistory] = useState<HistoryEntry[]>(
     post.history && post.history.length ? post.history : []
@@ -204,6 +206,71 @@ const ContentItem: React.FC<ContentItemProps> = ({
     loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDetailOpen, postIdForApi]);
+
+  // Always scroll to the newest comment when the thread changes.
+  useEffect(() => {
+    if (!isDetailOpen) return;
+    // Let the DOM paint first.
+    const t = window.setTimeout(() => {
+      try {
+        commentsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      } catch {
+        // ignore
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [isDetailOpen, comments.length]);
+
+  // Realtime updates for discussion + activity while modal is open.
+  useEffect(() => {
+    if (!isDetailOpen) return;
+    if (!postIdForApi) return;
+    if (localStorage.getItem("demoMode")) return;
+
+    const token = localStorage.getItem("accessToken");
+    if (!token) return;
+
+    // Admin users need the client group to receive client-scoped events.
+    const clientIdForWs = isAdmin
+      ? ((post as any)?.client?.id ?? (post as any)?.client_id ?? undefined)
+      : undefined;
+
+    let refreshTimer: number | null = null;
+    const scheduleRefresh = (what: "discussion" | "history" | "both") => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        if (what === "discussion" || what === "both") loadDiscussion();
+        if (what === "history" || what === "both") loadHistory();
+      }, 150);
+    };
+
+    const disconnect = connectEventsSocket({
+      token,
+      clientId: clientIdForWs,
+      onEvent: (msg) => {
+        const evt = String((msg as any)?.event || "");
+        const data = (msg as any)?.data || {};
+        const itemId = Number(data?.content_item_id);
+        if (!Number.isFinite(itemId) || itemId !== Number(postIdForApi)) return;
+
+        if (evt === "comment_added") {
+          scheduleRefresh("discussion");
+          return;
+        }
+
+        if (evt === "content_item_status_changed" || evt === "content_item_updated") {
+          scheduleRefresh("history");
+          return;
+        }
+      },
+    });
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDetailOpen, postIdForApi, isAdmin, (post as any)?.client?.id]);
 
   const handleCopy = (text: string, field: string) => {
     try {
@@ -1045,6 +1112,7 @@ const ContentItem: React.FC<ContentItemProps> = ({
                         </React.Fragment>
                       ))
                     )}
+                    <div ref={commentsEndRef} />
                   </div>
 
                   <form onSubmit={handleAddComment} className="relative">
