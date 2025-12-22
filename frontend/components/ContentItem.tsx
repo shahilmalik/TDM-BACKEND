@@ -34,7 +34,130 @@ interface ContentItemProps {
   onSchedule?: (id: string | number, scheduledAtIso: string) => void;
   onDragStart?: (e: React.DragEvent, id: string | number) => void;
   onRefresh?: () => void | Promise<void>;
+
+  // Optional controlled modal behavior. This lets parent pages keep the modal open
+  // even if the card unmounts/remounts (e.g., when a status/column changes).
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onOpen?: (post: PipelinePost) => void;
+  hideCard?: boolean;
+  renderModal?: boolean;
 }
+
+const DiscussionCommentCard: React.FC<{
+  comment: Comment;
+  isReply?: boolean;
+  replyingToId: string | null;
+  replyInput: string;
+  isDiscussionLoading: boolean;
+  onStartReply: (commentId: string) => void;
+  onChangeReplyInput: (value: string) => void;
+  onCancelReply: () => void;
+  onSubmitReply: (comment: Comment) => void;
+}> = ({
+  comment,
+  isReply = false,
+  replyingToId,
+  replyInput,
+  isDiscussionLoading,
+  onStartReply,
+  onChangeReplyInput,
+  onCancelReply,
+  onSubmitReply,
+}) => {
+  return (
+    <div
+      className={`flex gap-3 ${
+        isReply ? "ml-8 mt-3 border-l-2 border-slate-100 pl-4" : "mb-6"
+      }`}
+    >
+      <div
+        className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+          comment.role === "agency"
+            ? "bg-violet-100 text-[#6C5CE7]"
+            : "bg-orange-100 text-[#FF6B6B]"
+        }`}
+      >
+        {comment.author?.[0] || "U"}
+      </div>
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-bold text-slate-800 text-sm">
+            {comment.author}
+          </span>
+          <span className="text-[10px] text-slate-400 font-medium">
+            {comment.date}
+          </span>
+          {comment.role === "agency" && (
+            <span className="bg-slate-100 text-slate-500 text-[9px] px-1.5 rounded uppercase font-black">
+              Agency
+            </span>
+          )}
+        </div>
+        <p className="text-slate-600 text-sm leading-relaxed mb-2">
+          {comment.text}
+        </p>
+
+        {!isReply && (
+          <button
+            disabled={(comment.replies || []).length > 0}
+            onClick={() => {
+              if ((comment.replies || []).length > 0) return;
+              onStartReply(String(comment.id));
+            }}
+            className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-[#6C5CE7] disabled:opacity-40 disabled:hover:text-slate-400 transition-colors"
+          >
+            <Reply size={12} /> REPLY
+          </button>
+        )}
+
+        {!isReply && replyingToId === String(comment.id) && (
+          <div className="mt-3">
+            <textarea
+              value={replyInput}
+              onChange={(e) => onChangeReplyInput(e.target.value)}
+              placeholder="Write a reply..."
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-[#6C5CE7] transition-all min-h-[70px]"
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={onCancelReply}
+                className="px-3 py-2 text-xs font-bold bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!replyInput.trim() || isDiscussionLoading}
+                onClick={() => onSubmitReply(comment)}
+                className="px-3 py-2 text-xs font-bold bg-[#6C5CE7] text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 transition-colors"
+              >
+                Reply
+              </button>
+            </div>
+          </div>
+        )}
+
+        {comment.replies?.map((reply) => (
+          <React.Fragment key={reply.id}>
+            <DiscussionCommentCard
+              comment={reply}
+              isReply={true}
+              replyingToId={replyingToId}
+              replyInput={replyInput}
+              isDiscussionLoading={isDiscussionLoading}
+              onStartReply={onStartReply}
+              onChangeReplyInput={onChangeReplyInput}
+              onCancelReply={onCancelReply}
+              onSubmitReply={onSubmitReply}
+            />
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const ContentItem: React.FC<ContentItemProps> = ({
   post,
@@ -44,8 +167,18 @@ const ContentItem: React.FC<ContentItemProps> = ({
   onSchedule,
   onDragStart,
   onRefresh,
+  open,
+  onOpenChange,
+  onOpen,
+  hideCard,
+  renderModal,
 }) => {
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [internalDetailOpen, setInternalDetailOpen] = useState(false);
+  const isDetailOpen = open ?? internalDetailOpen;
+  const setDetailOpen = (next: boolean) => {
+    if (onOpenChange) onOpenChange(next);
+    if (open === undefined) setInternalDetailOpen(next);
+  };
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const [hashtags, setHashtags] = useState<string[]>(post.hashtags || []);
@@ -406,96 +539,15 @@ const ContentItem: React.FC<ContentItemProps> = ({
     return [];
   })();
 
-  const CommentCard = ({
-    comment,
-    isReply = false,
-  }: {
-    comment: Comment;
-    isReply?: boolean;
-  }) => (
-    <div
-      className={`flex gap-3 ${
-        isReply ? "ml-8 mt-3 border-l-2 border-slate-100 pl-4" : "mb-6"
-      }`}
-    >
-      <div
-        className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-          comment.role === "agency"
-            ? "bg-violet-100 text-[#6C5CE7]"
-            : "bg-orange-100 text-[#FF6B6B]"
-        }`}
-      >
-        {comment.author?.[0] || "U"}
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-bold text-slate-800 text-sm">
-            {comment.author}
-          </span>
-          <span className="text-[10px] text-slate-400 font-medium">
-            {comment.date}
-          </span>
-          {comment.role === "agency" && (
-            <span className="bg-slate-100 text-slate-500 text-[9px] px-1.5 rounded uppercase font-black">
-              Agency
-            </span>
-          )}
-        </div>
-        <p className="text-slate-600 text-sm leading-relaxed mb-2">
-          {comment.text}
-        </p>
-        {!isReply && (
-          <button
-            disabled={(comment.replies || []).length > 0}
-            onClick={() => {
-              if ((comment.replies || []).length > 0) return;
-              setReplyingToId(String(comment.id));
-              setReplyInput("");
-            }}
-            className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-[#6C5CE7] disabled:opacity-40 disabled:hover:text-slate-400 transition-colors"
-          >
-            <Reply size={12} /> REPLY
-          </button>
-        )}
+  const startReply = (commentId: string) => {
+    setReplyingToId(commentId);
+    setReplyInput("");
+  };
 
-        {!isReply && replyingToId === String(comment.id) && (
-          <div className="mt-3">
-            <textarea
-              value={replyInput}
-              onChange={(e) => setReplyInput(e.target.value)}
-              placeholder="Write a reply..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-[#6C5CE7] transition-all min-h-[70px]"
-            />
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setReplyingToId(null);
-                  setReplyInput("");
-                }}
-                className="px-3 py-2 text-xs font-bold bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!replyInput.trim() || isDiscussionLoading}
-                onClick={() => void handleReply(comment)}
-                className="px-3 py-2 text-xs font-bold bg-[#6C5CE7] text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 transition-colors"
-              >
-                Reply
-              </button>
-            </div>
-          </div>
-        )}
-        {comment.replies?.map((reply) => (
-          <React.Fragment key={reply.id}>
-            <CommentCard comment={reply} isReply={true} />
-          </React.Fragment>
-        ))}
-      </div>
-    </div>
-  );
+  const cancelReply = () => {
+    setReplyingToId(null);
+    setReplyInput("");
+  };
 
   const displayThumbnail =
     post.thumbnail ||
@@ -626,12 +678,19 @@ const ContentItem: React.FC<ContentItemProps> = ({
   return (
     <>
       {/* List View Card */}
-      <div
-        draggable={!!isAdmin || post.status === "approval"}
-        onDragStart={(e) => onDragStart && onDragStart(e, post.id)}
-        onClick={() => setIsDetailOpen(true)}
-        className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-pointer group active:cursor-grabbing relative min-w-0"
-      >
+      {!hideCard && (
+        <div
+          draggable={!!isAdmin || post.status === "approval"}
+          onDragStart={(e) => onDragStart && onDragStart(e, post.id)}
+          onClick={() => {
+            if (onOpen) {
+              onOpen(post);
+              return;
+            }
+            setDetailOpen(true);
+          }}
+          className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-pointer group active:cursor-grabbing relative min-w-0"
+        >
         <div className="flex justify-between items-start mb-3">
           <div className="flex gap-1.5">
             {kanbanPlatforms.map((p) => (
@@ -734,20 +793,21 @@ const ContentItem: React.FC<ContentItemProps> = ({
             </button>
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Detailed View Modal */}
-      {isDetailOpen && (
+      {(renderModal ?? true) && isDetailOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto"
-          onClick={() => setIsDetailOpen(false)}
+          onClick={() => setDetailOpen(false)}
         >
           <div
             className="bg-white rounded-3xl w-full max-w-6xl my-8 overflow-hidden shadow-2xl flex flex-col md:flex-row relative animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              onClick={() => setIsDetailOpen(false)}
+              onClick={() => setDetailOpen(false)}
               className="absolute top-4 right-4 z-[110] p-2 bg-white/80 backdrop-blur rounded-full hover:bg-white text-slate-400 hover:text-red-500 shadow-sm transition-all"
             >
               <X size={20} />
@@ -1106,11 +1166,21 @@ const ContentItem: React.FC<ContentItemProps> = ({
                     {isDiscussionLoading && comments.length === 0 ? (
                       <div className="text-sm text-slate-400">Loading…</div>
                     ) : (
-                      comments.map((c) => (
-                        <React.Fragment key={c.id}>
-                          <CommentCard comment={c} />
-                        </React.Fragment>
-                      ))
+                      <>
+                        {comments.map((c) => (
+                          <DiscussionCommentCard
+                            key={c.id}
+                            comment={c}
+                            replyingToId={replyingToId}
+                            replyInput={replyInput}
+                            isDiscussionLoading={isDiscussionLoading}
+                            onStartReply={startReply}
+                            onChangeReplyInput={setReplyInput}
+                            onCancelReply={cancelReply}
+                            onSubmitReply={(comment) => void handleReply(comment)}
+                          />
+                        ))}
+                      </>
                     )}
                     <div ref={commentsEndRef} />
                   </div>

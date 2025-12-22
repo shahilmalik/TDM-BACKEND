@@ -177,6 +177,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
   const otpRefs = React.useRef<(HTMLInputElement | null)[]>([]);
   const [selectedPost, setSelectedPost] = useState<PipelinePost | null>(null);
   const [selectedInstaPost, setSelectedInstaPost] = useState<any>(null);
+  const [openContentItemId, setOpenContentItemId] = useState<
+    string | number | null
+  >(null);
 
   // Meta / Instagram Data
   const [metaInsights, setMetaInsights] = useState<any>(MOCK_META_INSIGHTS);
@@ -1362,6 +1365,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
                             onApprove={handleApprovePostById}
                             onRevise={handleRequestChangesById}
                             onRefresh={refreshPipelinePosts}
+                            renderModal={false}
+                            onOpen={(p) => setOpenContentItemId(p.id)}
                           />
                         ))}
                       </div>
@@ -1371,6 +1376,33 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Keep the modal mounted outside the columns so it doesn't close when the item moves columns */}
+        {openContentItemId != null && (
+          (() => {
+            const openPost = pipelinePosts.find(
+              (p) => p.id === openContentItemId
+            );
+            if (!openPost) {
+              return null;
+            }
+            return (
+              <ContentItem
+                key={openPost.id}
+                post={openPost}
+                isAdmin={false}
+                hideCard={true}
+                open={true}
+                onOpenChange={(open) => {
+                  if (!open) setOpenContentItemId(null);
+                }}
+                onApprove={handleApprovePostById}
+                onRevise={handleRequestChangesById}
+                onRefresh={refreshPipelinePosts}
+              />
+            );
+          })()
         )}
 
         {activeTab === "billing" && (

@@ -425,6 +425,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Post Detail / Edit Modal
   const [selectedPost, setSelectedPost] = useState<PipelinePost | null>(null);
+  const [openContentItemId, setOpenContentItemId] = useState<
+    string | number | null
+  >(null);
 
   // Invoice Form State
   const emptyInvoiceState = {
@@ -2322,6 +2325,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onDragStart={handlePipelineDragStart}
                               onSchedule={handleScheduleById}
                               onRefresh={fetchPipeline}
+                              renderModal={false}
+                              onOpen={(p) => setOpenContentItemId(p.id)}
                             />
                           ))}
                         </div>
@@ -2337,6 +2342,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   Select a client to view their content pipeline
                 </p>
               </div>
+            )}
+
+            {/* Keep the modal mounted outside the columns so it doesn't close when the item moves columns */}
+            {openContentItemId != null && (
+              (() => {
+                if (!selectedPipelineClient) return null;
+                const list = pipelineData[selectedPipelineClient] || [];
+                const openPost = list.find((p) => p.id === openContentItemId);
+                if (!openPost) return null;
+                return (
+                  <ContentItem
+                    key={openPost.id}
+                    post={openPost}
+                    isAdmin={true}
+                    hideCard={true}
+                    open={true}
+                    onOpenChange={(open) => {
+                      if (!open) setOpenContentItemId(null);
+                    }}
+                    onSchedule={handleScheduleById}
+                    onRefresh={fetchPipeline}
+                  />
+                );
+              })()
             )}
 
             {isCreateTaskModalOpen && (
