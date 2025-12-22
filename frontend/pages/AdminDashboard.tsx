@@ -75,6 +75,7 @@ import {
   mapBackendColumnToStatus,
   mapStatusToBackendColumn,
 } from "../services/api";
+import { connectEventsSocket } from "../services/eventsSocket";
 
 const PIPELINE_COLUMNS: { id: PipelineStatus; label: string; color: string }[] =
   [
@@ -143,7 +144,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const openCreateTaskModal = async () => {
     if (!selectedPipelineClient) return;
-    if (selectedPipelineClient === MOCK_PIPELINE_CLIENT_ID) return;
     setCreateTaskTitle("");
     setCreateTaskServiceId("");
     setCreateTaskInvoiceId("");
@@ -1066,6 +1066,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       console.error("Failed to fetch pipeline", e);
     }
   };
+
+  // Live updates (unread counts, status changes, comments) via WebSocket
+  useEffect(() => {
+    if (localStorage.getItem("demoMode")) return;
+    if (activeTab !== "pipeline") return;
+
+    const token = localStorage.getItem("accessToken");
+    if (!token) return;
+    if (!selectedPipelineClient) return;
+
+    let refreshTimer: number | null = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        fetchPipeline();
+      }, 250);
+    };
+
+    const disconnect = connectEventsSocket({
+      token,
+      clientId: selectedPipelineClient,
+      onEvent: (msg) => {
+        const evt = String(msg?.event || "");
+        if (
+          evt === "comment_added" ||
+          evt === "content_item_status_changed" ||
+          evt === "content_item_updated" ||
+          evt === "invoice_item_recorded"
+        ) {
+          scheduleRefresh();
+        }
+      },
+    });
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, selectedPipelineClient]);
 
   const handleScheduleById = async (
     postId: string | number,

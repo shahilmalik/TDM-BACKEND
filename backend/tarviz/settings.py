@@ -43,11 +43,12 @@ INSTALLED_APPS = [
     'kanban',
     'authentication',
     'core',
-    'invoice',
+    'invoice.apps.InvoiceConfig',
     'drf_yasg',
     'meta',
     "corsheaders",
     'simple_history',
+    'channels',
 ]
 
 MIDDLEWARE = [
@@ -90,6 +91,15 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'tarviz.wsgi.application'
+
+# Channels (WebSockets)
+ASGI_APPLICATION = 'tarviz.asgi.application'
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    }
+}
 
 
 # Database

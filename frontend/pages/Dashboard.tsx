@@ -1,28 +1,3 @@
-    const refreshPipelinePosts = async () => {
-      if (localStorage.getItem("demoMode")) return;
-      try {
-        const kanbanItems = await api.kanban.list();
-        const mapped = (kanbanItems || []).map((item: any) => ({
-          id: item.id,
-          title: item.title,
-          platform: item.platforms?.[0] || "instagram",
-          platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
-          priority: item.priority || undefined,
-          unread_comments_count: Number(item.unread_comments_count ?? 0),
-          status: mapBackendColumnToStatus(item.column),
-          dueDate: item.due_date,
-          creative_copy: item.creative_copy,
-          post_caption: item.post_caption,
-          description: item.creative_copy ?? item.description,
-          caption: item.post_caption ?? item.caption,
-          thumbnail: item.thumbnail,
-          media_assets: Array.isArray(item.media_assets) ? item.media_assets : undefined,
-        }));
-        setPipelinePosts(mapped);
-      } catch (e) {
-        // ignore
-      }
-    };
 import React, { useState, useEffect } from "react";
 import {
   BarChart,
@@ -88,6 +63,7 @@ import {
   mapBackendColumnToStatus,
   mapStatusToBackendColumn,
 } from "../services/api";
+import { connectEventsSocket } from "../services/eventsSocket";
 
 // --- MOCK DATA (simplified, valid placeholders) ---
 const MOCK_META_INSIGHTS = {
@@ -151,6 +127,34 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [pipelinePosts, setPipelinePosts] = useState<PipelinePost[]>([]);
 
+  const refreshPipelinePosts = async () => {
+    if (localStorage.getItem("demoMode")) return;
+    try {
+      const kanbanItems = await api.kanban.list();
+      const mapped = (kanbanItems || []).map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        platform: item.platforms?.[0] || "instagram",
+        platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
+        priority: item.priority || undefined,
+        unread_comments_count: Number(item.unread_comments_count ?? 0),
+        status: mapBackendColumnToStatus(item.column),
+        dueDate: item.due_date,
+        creative_copy: item.creative_copy,
+        post_caption: item.post_caption,
+        description: item.creative_copy ?? item.description,
+        caption: item.post_caption ?? item.caption,
+        thumbnail: item.thumbnail,
+        media_assets: Array.isArray(item.media_assets)
+          ? item.media_assets
+          : undefined,
+      }));
+      setPipelinePosts(mapped);
+    } catch (e) {
+      // ignore
+    }
+  };
+
   // UI State
   const [draggedPostId, setDraggedPostId] = useState<string | number | null>(
     null
@@ -200,6 +204,46 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout, onNavigate }) => {
     const idFromProfile = (userProfile as any)?.id;
     return idFromProfile || localStorage.getItem("client_id");
   };
+
+  // Live updates (unread counts, status changes, comments) via WebSocket
+  useEffect(() => {
+    if (localStorage.getItem("demoMode")) return;
+    if (activeTab !== "pipeline") return;
+
+    const token = localStorage.getItem("accessToken");
+    const clientId = resolveClientId();
+    if (!token || !clientId) return;
+
+    let refreshTimer: number | null = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshPipelinePosts();
+      }, 200);
+    };
+
+    const disconnect = connectEventsSocket({
+      token,
+      clientId,
+      onEvent: (msg) => {
+        const evt = String(msg?.event || "");
+        if (
+          evt === "comment_added" ||
+          evt === "content_item_status_changed" ||
+          evt === "content_item_updated" ||
+          evt === "invoice_item_recorded"
+        ) {
+          scheduleRefresh();
+        }
+      },
+    });
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, userProfile?.id]);
 
   const loadClientDashboardMeta = async () => {
     const demoMode = localStorage.getItem("demoMode");

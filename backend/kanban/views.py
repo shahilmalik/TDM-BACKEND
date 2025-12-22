@@ -15,6 +15,7 @@ from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from typing import Any
 from .models import KANBAN_COLUMNS, APPROVAL_STATUS
+from kanban.ws import send_to_client_and_user
 
 class ContentItemViewSet(viewsets.ModelViewSet):
     queryset = ContentItem.objects.select_related(
@@ -92,6 +93,23 @@ class ContentItemViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
         item.save()
+
+        try:
+            client_id = getattr(item, "client_id", None)
+            if client_id:
+                send_to_client_and_user(
+                    client_id,
+                    "content_item_status_changed",
+                    {
+                        "content_item_id": item.id,
+                        "column": item.column,
+                        "scheduled_at": item.scheduled_at.isoformat()
+                        if item.scheduled_at
+                        else None,
+                    },
+                )
+        except Exception:
+            pass
         return Response({"success": True, "item": ContentItemSerializer(item).data})
 
     @action(

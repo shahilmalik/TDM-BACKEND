@@ -8,6 +8,7 @@ from core.models import BaseModel, CustomUser, Service, ClientProfile
 from django.core.exceptions import ValidationError
 import calendar
 import string
+from decimal import Decimal
 
 
 INVOICE_STATUS = [
@@ -100,8 +101,8 @@ class Invoice(BaseModel):
     due_date = models.DateField(blank=True, null=True)
 
     # gst percentage for whole invoice
-    gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    gst_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
+    gst_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0"))
 
     # totals cached on invoice creation
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -117,13 +118,17 @@ class Invoice(BaseModel):
 
     @property
     def paid_amount(self):
-        return sum([p.amount for p in self.payments.all()])
+        payments_rel = getattr(self, "payments", None)
+        if payments_rel is None:
+            return Decimal("0")
+        return sum((p.amount for p in payments_rel.all()), Decimal("0"))
 
     @property
     def pending_amount(self):
         if self.total_amount is None:
             return None
-        return max(self.total_amount - self.paid_amount, 0)
+        pending = (self.total_amount or Decimal("0")) - (self.paid_amount or Decimal("0"))
+        return pending if pending > Decimal("0") else Decimal("0")
 
     def _generate_client_code(self, company_name):
         name = (company_name or '').lower()
@@ -159,11 +164,7 @@ class Invoice(BaseModel):
 
     def _generate_invoice_id(self):
         # client_code must exist on client.profile.client_code or be generated
-        client_profile = None
-        try:
-            client_profile = self.client.profile
-        except Exception:
-            client_profile = None
+        client_profile = getattr(self.client, "profile", None)
 
         client_code = None
         if client_profile and getattr(client_profile, 'client_code', None):
@@ -230,11 +231,39 @@ class InvoiceItem(BaseModel):
         super().save(*args, **kwargs)
         # after saving an item, update invoice totals
         invoice = self.invoice
-        total = sum([it.line_total for it in invoice.items.all()])
-        gst_amount = (total * (invoice.gst_percentage or 0)) / 100
+        # Use a direct queryset instead of the reverse relation for better static typing support.
+        total = sum(
+            (it.line_total for it in InvoiceItem.objects.filter(invoice=invoice)),
+            Decimal("0"),
+        )
+        gst_pct = getattr(invoice, "gst_percentage", None) or Decimal("0")
+        gst_amount = (total * gst_pct) / Decimal("100")
         invoice.total_amount = total + gst_amount
         invoice.gst_amount = gst_amount
         invoice.save()
+
+        # Realtime event: invoice item recorded
+        try:
+            from kanban.ws import send_to_client_and_user
+
+            client_id = getattr(invoice, "client_id", None)
+            if client_id:
+                send_to_client_and_user(
+                    client_id,
+                    "invoice_item_recorded",
+                    {
+                        "invoice_id": invoice.pk,
+                        "invoice_item_id": self.pk,
+                        "total_amount": str(getattr(invoice, "total_amount", ""))
+                        if getattr(invoice, "total_amount", None) is not None
+                        else None,
+                        "gst_amount": str(getattr(invoice, "gst_amount", ""))
+                        if getattr(invoice, "gst_amount", None) is not None
+                        else None,
+                    },
+                )
+        except Exception:
+            pass
 
 
 class Payment(BaseModel):
@@ -250,9 +279,10 @@ class Payment(BaseModel):
             super().save(*args, **kwargs)
             invoice = self.invoice
             paid = invoice.paid_amount
-            if paid <= 0:
+            total_amount = invoice.total_amount if invoice.total_amount is not None else Decimal("0")
+            if paid <= Decimal("0"):
                 invoice.status = 'unpaid'
-            elif paid < (invoice.total_amount or 0):
+            elif paid < total_amount:
                 invoice.status = 'partially_paid'
             else:
                 invoice.status = 'paid'

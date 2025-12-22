@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import ContentItem, KANBAN_COLUMNS, MediaAsset, ContentComment
+from kanban.ws import send_to_client_and_user
 
 class ContentItemMoveSerializer(serializers.Serializer):
     target_column = serializers.ChoiceField(choices=[col[0] for col in KANBAN_COLUMNS])
@@ -21,6 +22,17 @@ class ContentItemMoveSerializer(serializers.Serializer):
         except Exception:
             pass
         item.move_to(user, target_column)
+
+        try:
+            client_id = getattr(item, "client_id", None)
+            if client_id:
+                send_to_client_and_user(
+                    client_id,
+                    "content_item_status_changed",
+                    {"content_item_id": item.id, "column": item.column},
+                )
+        except Exception:
+            pass
         return item
 
 class ContentItemApprovalSerializer(serializers.Serializer):
@@ -56,6 +68,22 @@ class ContentItemApprovalSerializer(serializers.Serializer):
             if notes is not None:
                 item.revise_notes = notes
         item.save()
+
+        try:
+            client_id = getattr(item, "client_id", None)
+            if client_id:
+                send_to_client_and_user(
+                    client_id,
+                    "content_item_status_changed",
+                    {
+                        "content_item_id": item.id,
+                        "column": item.column,
+                        "approval_status": item.approval_status,
+                        "action": action,
+                    },
+                )
+        except Exception:
+            pass
         return item
 
 
@@ -292,7 +320,28 @@ class ContentItemSerializer(serializers.ModelSerializer):
                 instance._history_user = user
             except Exception:
                 pass
-        return super().update(instance, validated_data)
+        old_column = getattr(instance, "column", None)
+        updated = super().update(instance, validated_data)
+
+        # Realtime: column changes (covers PATCH /content-items/<id>/ with {column: ...})
+        try:
+            new_column = getattr(updated, "column", None)
+            if old_column != new_column:
+                client_id = getattr(updated, "client_id", None)
+                if client_id:
+                    send_to_client_and_user(
+                        client_id,
+                        "content_item_status_changed",
+                        {
+                            "content_item_id": updated.id,
+                            "column": new_column,
+                            "from_column": old_column,
+                        },
+                    )
+        except Exception:
+            pass
+
+        return updated
 
     def to_representation(self, instance):
         """Ensure consistent success format when needed."""
@@ -406,5 +455,22 @@ class ContentCommentSerializer(serializers.ModelSerializer):
                 )
             except Exception:
                 pass
+
+        try:
+            content_item = getattr(comment, "content_item", None)
+            client_id = getattr(content_item, "client_id", None)
+            if client_id:
+                send_to_client_and_user(
+                    client_id,
+                    "comment_added",
+                    {
+                        "content_item_id": comment.content_item_id,
+                        "comment_id": comment.id,
+                        "parent_id": comment.parent_id,
+                        "created_at": comment.created_at.isoformat() if comment.created_at else "",
+                    },
+                )
+        except Exception:
+            pass
 
         return comment

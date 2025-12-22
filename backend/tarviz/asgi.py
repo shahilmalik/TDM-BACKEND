@@ -9,8 +9,19 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
 
 import os
 
-from django.core.asgi import get_asgi_application
-
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tarviz.settings')
 
-application = get_asgi_application()
+from channels.routing import ProtocolTypeRouter, URLRouter
+from django.core.asgi import get_asgi_application
+
+from tarviz.routing import websocket_urlpatterns
+from tarviz.ws_auth import QueryStringJWTAuthMiddlewareStack
+
+django_asgi_app = get_asgi_application()
+
+application = ProtocolTypeRouter(
+	{
+		"http": django_asgi_app,
+		"websocket": QueryStringJWTAuthMiddlewareStack(URLRouter(websocket_urlpatterns)),
+	}
+)
