@@ -10,7 +10,7 @@ Success response (200):
 [
   {
     "id": 1,
-    "service_id": "SVC001",
+    "service_id": "SOC001",
     "name": "Social Media Management",
     "hsn": "9984",
     "category": {
@@ -24,6 +24,31 @@ Success response (200):
 ]
 ```
 
+## Preview Service ID
+
+GET /api/services/preview-service-id/?category_id={id}
+
+Returns the next auto-generated service ID for a given category.
+
+Query Parameters:
+- `category_id` (required): The ID of the category
+
+Success response (200):
+
+```json
+{
+  "service_id": "SOC002"
+}
+```
+
+Error response (400):
+
+```json
+{
+  "error": "category_id is required"
+}
+```
+
 ## Create Service
 
 POST /api/services/
@@ -32,7 +57,6 @@ Request body (JSON):
 
 ```json
 {
-  "service_id": "SVC002",
   "name": "Website Design",
   "description": "Basic website package",
   "price": "5000.00",
@@ -42,12 +66,14 @@ Request body (JSON):
 }
 ```
 
+**Note**: `service_id` is now auto-generated based on the category. The system uses the first 3 letters of the category name (uppercase) followed by a sequential 3-digit number (e.g., WEB001, WEB002, SOC001). Category is mandatory.
+
 Success response (201):
 
 ```json
 {
   "id": 2,
-  "service_id": "SVC002",
+  "service_id": "WEB001",
   "name": "Website Design"
 }
 ```

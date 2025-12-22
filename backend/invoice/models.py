@@ -40,9 +40,11 @@ class BusinessInfo(BaseModel):
     name = models.CharField(max_length=200)
     logo = models.CharField(max_length=500, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
+    address_2 = models.TextField(blank=True, null=True)
     phone = models.CharField(max_length=50, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
-    secondary_email = models.EmailField(blank=True, null=True) 
+    secondary_email = models.EmailField(blank=True, null=True)
+    gstin = models.CharField(max_length=15, blank=True, null=True)
     bank_account_name = models.CharField(max_length=200, blank=True, null=True)
     bank_account_number = models.CharField(max_length=64, blank=True, null=True)
     bank_name = models.CharField(max_length=200, blank=True, null=True)
@@ -56,6 +58,8 @@ class BusinessInfo(BaseModel):
         if not self.pk and BusinessInfo.objects.exists():
             raise ValidationError("Only one BusinessInfo instance is allowed. Update the existing one instead.")
         
+        if self.gstin:
+            self.gstin = self.gstin.upper()
         if self.bank_account_name:
             self.bank_account_name = self.bank_account_name.upper()
         if self.bank_account_number:
@@ -193,12 +197,9 @@ class Invoice(BaseModel):
                     if getattr(orig, field, None) != getattr(self, field, None):
                         raise ValidationError('Invoices are immutable once created')
 
-                # total_amount is allowed to be set if it was previously None (initial calculation).
-                # Disallow changes to total_amount if it already had a value.
-                orig_total = getattr(orig, 'total_amount', None)
-                new_total = getattr(self, 'total_amount', None)
-                if orig_total is not None and orig_total != new_total:
-                    raise ValidationError('Invoices are immutable once created')
+                # NOTE: Totals are derived from InvoiceItem rows and must be allowed to update as
+                # items are added/edited/deleted. Do not treat total_amount (and derived gst_amount)
+                # as immutable at the model layer.
 
         is_new = self.pk is None
         # on create, compute totals, gst and snapshot business info

@@ -45,6 +45,22 @@ class ServiceViewSet(viewsets.ModelViewSet):
         ]
         return Response({'success': True, 'categories': categories, 'is_active': is_active})
 
+    @action(detail=False, methods=['get'], url_path='preview-service-id')
+    def preview_service_id(self, request):
+        """Preview the next service ID for a given category."""
+        category_id = request.query_params.get('category_id')
+        if not category_id:
+            return Response({'error': 'category_id is required'}, status=400)
+        
+        try:
+            category = ServiceCategory.objects.get(id=category_id)
+            next_id = Service.generate_service_id(category)
+            return Response({'service_id': next_id})
+        except ServiceCategory.DoesNotExist:
+            return Response({'error': 'Category not found'}, status=404)
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+
     def get_queryset(self):
         qs = super().get_queryset()
 

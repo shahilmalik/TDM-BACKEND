@@ -51,16 +51,30 @@ class EmployeeSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'created_at', 'updated_at')
 
-class ServiceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Service
-        fields = '__all__'
-
-
 class ServiceCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceCategory
         fields = ('id', 'name', 'slug')
+
+
+class ServiceSerializer(serializers.ModelSerializer):
+    category = ServiceCategorySerializer(read_only=True)
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=ServiceCategory.objects.all(),
+        source='category',
+        write_only=True,
+        required=True
+    )
+
+    class Meta:
+        model = Service
+        fields = '__all__'
+        read_only_fields = ('service_id',)
+
+    def validate_category_id(self, value):
+        if not value:
+            raise serializers.ValidationError("Category is required.")
+        return value
 
 
 # Keep a compact serializer for listing services with category name and hsn

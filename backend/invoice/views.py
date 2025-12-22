@@ -263,6 +263,28 @@ class SenderInfoView(APIView):
         if not bi:
             return Response({'detail': 'No sender info configured'}, status=404)
         return Response(BusinessInfoSerializer(bi).data)
+    
+    def put(self, request):
+        """Update the BusinessInfo (singleton)."""
+        bi = BusinessInfo.objects.order_by('-created_at').first()
+        if not bi:
+            return Response({'detail': 'No sender info configured'}, status=404)
+        serializer = BusinessInfoSerializer(bi, data=request.data, partial=False)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+    
+    def patch(self, request):
+        """Partially update the BusinessInfo (singleton)."""
+        bi = BusinessInfo.objects.order_by('-created_at').first()
+        if not bi:
+            return Response({'detail': 'No sender info configured'}, status=404)
+        serializer = BusinessInfoSerializer(bi, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
 
 
 class ClientsDropdownView(APIView):

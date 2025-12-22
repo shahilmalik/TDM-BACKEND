@@ -346,6 +346,8 @@ export const api = {
         `/services/dropdowns/`,
         { method: "GET" }
       ),
+    previewServiceId: (categoryId: number) =>
+      request<{ service_id: string }>(`/services/preview-service-id/?category_id=${categoryId}`, { method: "GET" }),
     get: (id: number | string) =>
       request<BackendService>(`/services/${id}/`, { method: "GET" }),
     create: (data: any) =>
@@ -396,6 +398,11 @@ export const api = {
       }),
     getSenderInfo: () =>
       request<any>("/invoice/senderinfo/", { method: "GET" }),
+    updateSenderInfo: (data: any) =>
+      request<any>("/invoice/senderinfo/", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
     preview: (id: number | string) =>
       request<{ id: number; html: string }>(
         `/invoice/invoices/${id}/preview/`,

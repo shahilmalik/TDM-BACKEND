@@ -80,19 +80,50 @@ class ServiceCategory(BaseModel):
 
 
 class Service(BaseModel):
-    service_id = models.CharField(max_length=20, unique=True)
+    service_id = models.CharField(max_length=20, unique=True, blank=True)
     name = models.CharField(max_length=100)
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     is_active = models.BooleanField(default=True)
-    category = models.ForeignKey(ServiceCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='services')
+    category = models.ForeignKey(ServiceCategory, on_delete=models.PROTECT, related_name='services')
     hsn = models.CharField(max_length=10, blank=True, null=True)
     # Pipeline services automatically generate kanban ContentItems when invoiced.
     # pipeline_config stores a list of objects like: [{"prefix": "post", "count": 8}]
     is_pipeline = models.BooleanField(default=False)
     pipeline_config = models.JSONField(default=list, blank=True)
 
+    @staticmethod
+    def generate_service_id(category):
+        """Generate next service ID for a given category (e.g., SOC001, SOC002)."""
+        if not category:
+            raise ValueError("Category is required to generate service ID")
+        
+        # Get first 3 letters of category name and uppercase
+        prefix = category.name[:3].upper()
+        
+        # Find the highest existing number for this category
+        existing_services = Service.objects.filter(
+            service_id__startswith=prefix
+        ).order_by('-service_id')
+        
+        if existing_services.exists():
+            last_id = existing_services.first().service_id
+            try:
+                # Extract the numeric part
+                last_number = int(last_id[3:])
+                next_number = last_number + 1
+            except (ValueError, IndexError):
+                next_number = 1
+        else:
+            next_number = 1
+        
+        return f"{prefix}{next_number:03d}"
+
     def save(self, *args, **kwargs):
+        # Auto-generate service_id if not provided
+        if not self.service_id and self.category:
+            self.service_id = self.generate_service_id(self.category)
+        
         if self.service_id:
             self.service_id = self.service_id.upper()
         if self.hsn:

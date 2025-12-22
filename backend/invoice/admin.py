@@ -52,5 +52,5 @@ class PaymentTermAdmin(admin.ModelAdmin):
 
 @admin.register(BusinessInfo)
 class BusinessInfoAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "email", "phone", "secondary_email")
-    search_fields = ("name", "email", "phone")
+    list_display = ("id", "name", "email", "phone", "gstin", "secondary_email")
+    search_fields = ("name", "email", "phone", "gstin")

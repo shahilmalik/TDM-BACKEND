@@ -670,8 +670,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         phone: data?.phone ?? "",
         email: data?.email ?? "",
         secondaryEmail: data?.secondary_email ?? "",
-        // BusinessInfo currently doesn't expose GSTIN; keep empty.
-        gstin: "",
+        gstin: data?.gstin ?? "",
         bankDetails: {
           accountName: data?.bank_account_name ?? "",
           bankName: data?.bank_name ?? "",
@@ -1534,14 +1533,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleAddService = async () => {
-    if (!newService.categoryId) return;
+    if (!newService.categoryId) {
+      setAdminMessage({ type: "error", text: "Category is required." });
+      return;
+    }
+    if (!newService.name.trim()) {
+      setAdminMessage({ type: "error", text: "Service name is required." });
+      return;
+    }
     try {
       const payload = {
-        service_id: newService.service_id,
         name: newService.name,
         description: newService.description,
         price: Number(newService.price),
-        category: parseInt(newService.categoryId),
+        category_id: parseInt(newService.categoryId),
         hsn: newService.hsn,
         is_active: true,
         is_pipeline: newService.isPipeline,
@@ -1564,8 +1569,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         pipelineConfig: [{ prefix: "", count: 0 }],
       });
       setEditingServiceId(null);
+      setAdminMessage({ type: "success", text: editingServiceId ? "Service updated successfully." : "Service created successfully." });
     } catch (error: any) {
       setAdminMessage({ type: "error", text: error?.message || "Failed." });
+    }
+  };
+
+  const handleCategoryChange = async (categoryId: string) => {
+    setNewService((p) => ({ ...p, categoryId, service_id: "" }));
+    
+    if (categoryId && !editingServiceId) {
+      try {
+        const result = await api.services.previewServiceId(parseInt(categoryId));
+        setNewService((p) => ({ ...p, service_id: result.service_id }));
+      } catch (error: any) {
+        console.error("Failed to fetch preview service ID:", error);
+      }
     }
   };
 
@@ -1584,7 +1603,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           : [{ prefix: "", count: 1 }],
     });
     setEditingServiceId(srv.id);
-    setIsServiceModalOpen(true);
+    setSelectedServiceDetail(null); // Close the detail modal
+    setIsServiceModalOpen(true); // Open the edit modal
   };
 
   const openServiceDetail = async (serviceId: number | string) => {
@@ -1913,6 +1933,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setAdminMessage({
         type: "error",
         text: e?.message || "Failed to save employee.",
+      });
+    }
+  };
+
+  const handleSaveCompanyProfile = async () => {
+    try {
+      const payload = {
+        name: companyDetails.name,
+        address: companyDetails.address,
+        phone: companyDetails.phone,
+        email: companyDetails.email,
+        secondary_email: companyDetails.secondaryEmail,
+        gstin: companyDetails.gstin,
+        bank_account_name: companyDetails.bankDetails.accountName,
+        bank_account_number: companyDetails.bankDetails.accountNumber,
+        bank_name: companyDetails.bankDetails.bankName,
+        ifsc: companyDetails.bankDetails.ifsc,
+      };
+      await api.invoice.updateSenderInfo(payload);
+      setAdminMessage({ type: "success", text: "Company profile updated successfully." });
+      fetchCompanyProfile();
+    } catch (e: any) {
+      setAdminMessage({
+        type: "error",
+        text: e?.message || "Failed to update company profile.",
       });
     }
   };
@@ -3477,13 +3522,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* SETTINGS TAB */}
         {activeTab === "settings" && (
           <div className="space-y-8 animate-in fade-in duration-500 max-w-4xl pb-12">
-            <div>
-              <h2 className="text-3xl font-extrabold text-slate-800">
-                Company Profile
-              </h2>
-              <p className="text-slate-500">
-                Master settings for Tarviz Digimart agency details.
-              </p>
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-3xl font-extrabold text-slate-800">
+                  Company Profile
+                </h2>
+                <p className="text-slate-500">
+                  Master settings for Tarviz Digimart agency details.
+                </p>
+              </div>
+              <button
+                onClick={handleSaveCompanyProfile}
+                className="flex items-center gap-2 bg-[#6C5CE7] text-white font-bold px-6 py-2.5 rounded-xl shadow-lg shadow-violet-200 transition-all hover:bg-[#5a4ad1]"
+              >
+                <Save size={18} /> Save Changes
+              </button>
             </div>
             <div className="grid gap-8">
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
@@ -4475,40 +4528,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="grid md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Service ID
-                  </label>
-                  <input
-                    value={newService.service_id}
-                    onChange={(e) =>
-                      setNewService((p) => ({
-                        ...p,
-                        service_id: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Category
+                    Category <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={newService.categoryId}
-                    onChange={(e) =>
-                      setNewService((p) => ({
-                        ...p,
-                        categoryId: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => handleCategoryChange(e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+                    required
                   >
-                    <option value="">-- Select --</option>
+                    <option value="">-- Select Category --</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
+                    Service ID {!editingServiceId && "(Auto-generated)"}
+                  </label>
+                  <input
+                    value={newService.service_id}
+                    readOnly
+                    className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl outline-none text-slate-600 cursor-not-allowed"
+                    placeholder={newService.categoryId ? "Will be auto-generated" : "Select category first"}
+                  />
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">

@@ -37,6 +37,15 @@
       margin: 0;
     }
 
+    .company-logo {
+      display: block;
+      max-height: 52px;
+      max-width: 240px;
+      height: auto;
+      width: auto;
+      margin: 0 0 6px 0;
+    }
+
     .meta {
       margin-top: 6px;
     }
@@ -72,6 +81,7 @@
 
     .items {
       margin-top: 14px;
+      table-layout: fixed;
     }
     .items th {
       text-transform: uppercase;
@@ -88,6 +98,12 @@
       vertical-align: top;
     }
     .items .right { text-align: right; }
+
+    /* Column sizing + numeric alignment for PDF rendering (WeasyPrint). */
+    .items th:nth-child(1), .items td:nth-child(1) { width: 56%; overflow-wrap: anywhere; }
+    .items th:nth-child(2), .items td:nth-child(2) { width: 14%; }
+    .items th:nth-child(3), .items td:nth-child(3) { width: 10%; white-space: nowrap; }
+    .items th:nth-child(4), .items td:nth-child(4) { width: 20%; white-space: nowrap; }
 
     .item-name { font-weight: 700; margin-bottom: 2px; }
     .item-desc { color: #64748b; font-size: 10px; }
@@ -136,7 +152,15 @@
     <table class="header">
       <tr>
         <td>
+          {% if company.logo %}
+            <img class="company-logo" src="{{ company.logo }}" alt="{{ company.name }} logo" />
+          {% endif %}
           <p class="title">{{ company.name|default:"TarvizDigimart" }}</p>
+          {% if company.gstin %}
+            <div class="muted" style="margin-top: 2px; font-size: 10px;">
+              <strong class="muted">GSTIN:</strong> <span class="mono">{{ company.gstin }}</span>
+            </div>
+          {% endif %}
           <div class="muted" style="margin-top: 6px;">
             {{ company.address_line1 }}<br />
             {% if company.address_line2 %}{{ company.address_line2 }}<br />{% endif %}

@@ -19,13 +19,19 @@ def build_invoice_context(invoice, request=None):
     # sender/company snapshot fields
     business = BusinessInfo.objects.first()
     logo_url = None
-    if business and business.logo and request:
-        logo_url = request.build_absolute_uri(business.logo)
+    if business and business.logo:
+        raw_logo = str(business.logo)
+        if raw_logo.startswith('http://') or raw_logo.startswith('https://'):
+            logo_url = raw_logo
+        elif request:
+            logo_url = request.build_absolute_uri(raw_logo)
 
     company = {
         'name': business.name if business else '',
         'logo': logo_url,
         'address_line1': business.address if business else '',
+        'address_line2': business.address_2 if business else '',
+        'gstin': business.gstin if business else '',
         'phone': business.phone if business else '',
         'email': business.email if business else '',
     }
