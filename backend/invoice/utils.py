@@ -47,11 +47,16 @@ def build_invoice_context(invoice, request=None):
     # items
     items = []
     for it in invoice.items.all():
+        # Build the display name as "<qty>x <service/description>"
+        base_name = getattr(it.service, 'name', '') if it.service else (it.description or '')
+        qty = it.quantity or 0
+        display_name = f"{qty}x {base_name}" if qty else base_name
+
         items.append({
             'service_id': getattr(it.service, 'service_id', '') if it.service else '',
             'hsn_sac': getattr(it.service, 'hsn', '') if it.service else '',
-            'quantity': it.quantity,
-            'name': getattr(it.service, 'name', '') if it.service else (it.description or ''),
+            # quantity is now embedded into the name for display
+            'name': display_name,
             'description': it.description or '',
             'unit_price': it.unit_price,
             'total': it.line_total,

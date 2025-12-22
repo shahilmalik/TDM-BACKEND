@@ -89,6 +89,14 @@ const PIPELINE_COLUMNS: { id: PipelineStatus; label: string; color: string }[] =
     { id: "posted", label: "Posted", color: "border-slate-800" },
   ];
 
+const PLATFORM_OPTIONS = [
+  { value: "instagram", label: "Instagram" },
+  { value: "facebook", label: "Facebook" },
+  { value: "youtube", label: "YouTube" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "other", label: "Other" },
+] as const;
+
 interface AdminDashboardProps {
   onLogout: () => void;
   onNavigate?: (page: string, subPage?: string) => void;
@@ -355,6 +363,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     hsn: string;
     isPipeline: boolean;
     pipelineConfig: PipelineConfigItem[];
+    platforms: string[];
+    otherPlatform: string;
   }>({
     service_id: "",
     name: "",
@@ -364,6 +374,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     hsn: "",
     isPipeline: false,
     pipelineConfig: [{ prefix: "", count: 0 }],
+    platforms: [],
+    otherPlatform: "",
   });
   const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
 
@@ -1575,6 +1587,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setAdminMessage({ type: "error", text: "Service name is required." });
       return;
     }
+    if (newService.isPipeline && newService.platforms.length === 0) {
+      setAdminMessage({ type: "error", text: "Select at least one platform." });
+      return;
+    }
     try {
       const payload = {
         name: newService.name,
@@ -1585,6 +1601,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         is_active: true,
         is_pipeline: newService.isPipeline,
         pipeline_config: newService.isPipeline ? newService.pipelineConfig : [],
+        platforms: newService.platforms,
+        other_platform: newService.otherPlatform,
       };
       if (editingServiceId)
         await api.services.update(editingServiceId, payload);
@@ -1601,6 +1619,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         hsn: "",
         isPipeline: false,
         pipelineConfig: [{ prefix: "", count: 0 }],
+        platforms: [],
+        otherPlatform: "",
       });
       setEditingServiceId(null);
       setAdminMessage({ type: "success", text: editingServiceId ? "Service updated successfully." : "Service created successfully." });
@@ -1635,6 +1655,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         srv.pipeline_config && srv.pipeline_config.length > 0
           ? srv.pipeline_config
           : [{ prefix: "", count: 1 }],
+      platforms: srv.platforms || [],
+      otherPlatform: srv.other_platform || "",
     });
     setEditingServiceId(srv.id);
     setSelectedServiceDetail(null); // Close the detail modal
@@ -2687,28 +2709,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
                         <td className="px-6 py-4">
                           <span
-                            className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                              c.isActive
-                                ? "bg-green-50 text-green-600 border-green-200"
-                                : "bg-slate-50 text-slate-600 border-slate-200"
-                            }`}
-                          >
-                            {c.isActive ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                      </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {clientsList.length === 0 && (
-                <div className="p-12 text-center text-slate-400">
-                  <UserCircle size={44} className="mx-auto mb-3 opacity-40" />
-                  No clients yet.
-                </div>
-              )}
-
-              <div ref={clientsListSentinelRef} />
             </div>
           </div>
         )}
@@ -3091,6 +3091,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         const rowId = String(inv.id);
                         const isExpanded = expandedInvoiceId === rowId;
                         const historyState = invoiceHistoryById[rowId];
+                        const canStartPipeline =
+                          inv.status === "Paid" || inv.status === "Partially Paid";
+
                         return (
                           <React.Fragment key={inv.id}>
                             <tr
@@ -3187,17 +3190,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handlePreviewInvoice(Number(inv.id));
-                                  }}
-                                  className="font-bold text-sm text-slate-700 hover:underline mr-4"
-                                  title="Preview"
-                                >
-                                  Preview
-                                </button>
-
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
                                     handleDownloadInvoice(
                                       Number(inv.id),
                                       inv.invoiceNumber
@@ -3222,6 +3214,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         <p className="text-xs text-slate-500">
                                           {inv.invoiceNumber} • {inv.clientName}
                                         </p>
+                                        {historyState?.events?.[0]?.type ===
+                                          "created" &&
+                                          historyState.events[0].meta
+                                            ?.created_by && (
+                                            <p className="mt-1 text-xs text-slate-500">
+                                              Created by{" "}
+                                              {
+                                                historyState.events[0].meta
+                                                  .created_by
+                                              }
+                                            </p>
+                                          )}
                                       </div>
                                       <button
                                         onClick={(e) => {

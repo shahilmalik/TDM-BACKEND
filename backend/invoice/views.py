@@ -50,9 +50,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     # permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
+        """Create an invoice and record the creator in authorized_by."""
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
-            invoice = serializer.save()
+            # Ensure we always know who created/authorized the invoice
+            invoice = serializer.save(authorized_by=request.user)
             return Response({"success": True, "invoice": InvoiceSerializer(invoice).data}, status=status.HTTP_201_CREATED)
         return Response({"success": False, "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -170,15 +172,17 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def start_pipeline(self, request, pk=None):
-        """Create kanban ContentItems for pipeline services on this (paid) invoice.
+        """Create kanban ContentItems for pipeline services on this invoice.
 
         Idempotent: re-calling will only create missing items.
+        Now respects invoice item quantity, and allows partially paid invoices too.
         """
         invoice = self.get_object()
 
-        if invoice.status != 'paid':
+        # Allow starting for "paid" or "partially_paid" invoices
+        if invoice.status not in ['paid', 'partially_paid']:
             return Response(
-                {"success": False, "error": "Pipeline can only be started for paid invoices."},
+                {"success": False, "error": "Pipeline can only be started for paid or partially paid invoices."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -198,18 +202,23 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             if not isinstance(config, list):
                 continue
 
+            quantity = int(getattr(it, 'quantity', 1) or 1)
+
             for entry in config:
                 if not isinstance(entry, dict):
                     continue
                 prefix = (entry.get('prefix') or '').strip()
                 try:
-                    count = int(entry.get('count') or 0)
+                    base_count = int(entry.get('count') or 0)
                 except Exception:
-                    count = 0
-                if not prefix or count <= 0:
+                    base_count = 0
+                if not prefix or base_count <= 0:
                     continue
 
-                titles = [f"{prefix}-{i:03d}" for i in range(1, count + 1)]
+                # Total items to create = base_count * quantity
+                total_count = base_count * quantity
+                titles = [f"{prefix}-{i:03d}" for i in range(1, total_count + 1)]
+
                 existing = set(
                     ContentItem.objects.filter(
                         invoice=invoice,
@@ -252,13 +261,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def history(self, request, pk=None):
-        """Return a timeline for an invoice.
-
-        Events:
-        - Invoice created
-        - Payments recorded
-        - Pipeline started (derived: ContentItems exist for this invoice)
-        """
+        """Return a timeline for an invoice including who created it."""
         invoice = self.get_object()
 
         if request.user.type == 'client' and invoice.client != request.user:
@@ -271,7 +274,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         payments_qs = invoice.payments.select_related('payment_mode', 'received_by').order_by('paid_at', 'id')
         payments = PaymentSerializer(payments_qs, many=True).data
 
-        # Pipeline started timestamp is stored on invoice.
+        # Pipeline info
         pipeline_started_at = getattr(invoice, 'started_at', None)
         pipeline_started = pipeline_started_at is not None
         pipeline_created_count = 0
@@ -284,6 +287,14 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         events = []
 
         created_at = getattr(invoice, 'created_at', None)
+        creator = getattr(invoice, 'authorized_by', None)
+        creator_label = None
+        if creator is not None:
+            first = (getattr(creator, 'first_name', '') or '').strip()
+            last = (getattr(creator, 'last_name', '') or '').strip()
+            name = (f"{first} {last}").strip()
+            creator_label = name or getattr(creator, 'email', None) or str(getattr(creator, 'pk', ''))
+
         events.append(
             {
                 "type": "created",
@@ -292,6 +303,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 "meta": {
                     "invoice_id": invoice.pk,
                     "invoice_number": invoice.invoice_id,
+                    "created_by": creator_label,
+                    "created_by_id": getattr(creator, 'pk', None) if creator is not None else None,
                 },
             }
         )
@@ -305,6 +318,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                     last = (rb.get('last_name') or '').strip()
                     name = (f"{first} {last}").strip()
                     received_by = name or rb.get('email') or rb.get('id')
+                else:
+                    received_by = rb
             except Exception:
                 received_by = None
 
@@ -335,7 +350,6 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 }
             )
 
-        # Sort: unknown timestamps last
         def _sort_key(e):
             return (e.get('ts') is None, e.get('ts') or '')
 
@@ -496,4 +510,4 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(received_by=self.request.user)
-    
+

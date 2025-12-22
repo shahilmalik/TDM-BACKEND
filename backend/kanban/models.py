@@ -54,7 +54,7 @@ class ContentItem(BaseModel):
     column = models.CharField(max_length=50, choices=KANBAN_COLUMNS, default='backlog')
 
     # priority & assignment
-    priority = models.CharField(max_length=10, choices=PRIORITY_LEVEL, default="medium")
+    priority = models.CharField(max_length=10, choices=PRIORITY_LEVEL, default="low")
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

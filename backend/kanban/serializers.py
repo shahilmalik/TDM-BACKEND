@@ -304,8 +304,20 @@ class ContentItemSerializer(serializers.ModelSerializer):
                 {"client_id": "Client must match invoice client."}
             )
 
-        if data.get('platforms') and not isinstance(data['platforms'], list):
-            raise serializers.ValidationError({"error": "Platforms must be a list."})
+        platforms = data.get('platforms')
+        if platforms is not None:
+            if not isinstance(platforms, list):
+                raise serializers.ValidationError({"platforms": "Platforms must be a list."})
+            if len(platforms) == 0:
+                raise serializers.ValidationError({"platforms": "Select at least one platform."})
+        else:
+            # On create, require platforms
+            if self.instance is None:
+                raise serializers.ValidationError({"platforms": "Select at least one platform."})
+
+        # Ensure priority default
+        if not data.get('priority'):
+            data['priority'] = 'low'
 
         return data
 
@@ -313,6 +325,7 @@ class ContentItemSerializer(serializers.ModelSerializer):
         user = self.context['request'].user
         # Default created_by to request user unless provided explicitly
         validated_data.setdefault('created_by', user)
+        validated_data.setdefault('priority', 'low')
 
         # Force creation in backlog only
         validated_data['column'] = 'backlog'
