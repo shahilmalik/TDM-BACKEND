@@ -1,0 +1,5 @@
+# Local secrets / credentials (never commit)
+tdm-web-firebase-adminsdk-fbsvc-9bf82ba98f.json
+
+# Catch-all for Firebase Admin SDK service account files
+*-firebase-adminsdk-*.json
