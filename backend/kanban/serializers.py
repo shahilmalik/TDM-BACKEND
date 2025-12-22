@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import ContentItem, KANBAN_COLUMNS, MediaAsset, ContentComment
 from kanban.ws import send_to_client_and_user
+from core.notifications import notify_content_item_event
 
 class ContentItemMoveSerializer(serializers.Serializer):
     target_column = serializers.ChoiceField(choices=[col[0] for col in KANBAN_COLUMNS])
@@ -31,6 +32,18 @@ class ContentItemMoveSerializer(serializers.Serializer):
                     "content_item_status_changed",
                     {"content_item_id": item.id, "column": item.column},
                 )
+
+            notify_content_item_event(
+                content_item=item,
+                actor_user_id=getattr(user, "id", None),
+                title="Card moved",
+                body=f"{item.title} moved to {item.column}",
+                data={
+                    "event": "content_item_status_changed",
+                    "content_item_id": item.id,
+                    "column": item.column,
+                },
+            )
         except Exception:
             pass
         return item
@@ -82,6 +95,20 @@ class ContentItemApprovalSerializer(serializers.Serializer):
                         "action": action,
                     },
                 )
+
+            notify_content_item_event(
+                content_item=item,
+                actor_user_id=getattr(user, "id", None),
+                title="Content updated",
+                body=f"{item.title}: {action}",
+                data={
+                    "event": "content_item_status_changed",
+                    "content_item_id": item.id,
+                    "column": item.column,
+                    "approval_status": item.approval_status,
+                    "action": action,
+                },
+            )
         except Exception:
             pass
         return item
@@ -468,6 +495,23 @@ class ContentCommentSerializer(serializers.ModelSerializer):
                         "comment_id": comment.id,
                         "parent_id": comment.parent_id,
                         "created_at": comment.created_at.isoformat() if comment.created_at else "",
+                    },
+                )
+
+            from core.notifications import notify_content_item_event
+
+            if content_item:
+                is_reply = comment.parent_id is not None
+                notify_content_item_event(
+                    content_item=content_item,
+                    actor_user_id=getattr(user, "id", None),
+                    title="New reply" if is_reply else "New comment",
+                    body=f"{content_item.title}",
+                    data={
+                        "event": "comment_added",
+                        "content_item_id": comment.content_item_id,
+                        "comment_id": comment.id,
+                        "parent_id": comment.parent_id,
                     },
                 )
         except Exception:

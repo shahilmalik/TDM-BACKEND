@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 from core.pagination import StandardResultsSetPagination
-from .models import CustomUser, Service, ClientProfile, ServiceCategory
+from .models import CustomUser, Service, ClientProfile, ServiceCategory, DeviceToken
 from .serializers import UserSerializer, ServiceSerializer, ClientProfileSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -18,6 +18,8 @@ import logging
 import traceback
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from .serializers import DeviceTokenSerializer, DeviceTokenRegisterSerializer
 from authentication.models import OTP
 from django.core.cache import cache
 
@@ -258,6 +260,45 @@ class ClientViewSet(viewsets.ModelViewSet):
             )
 
         return qs
+
+
+class DeviceTokenViewSet(viewsets.ModelViewSet):
+    """Register/list/remove device tokens used for FCM push notifications."""
+
+    serializer_class = DeviceTokenSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return DeviceToken.objects.filter(user=self.request.user, archived=False).order_by(
+            "-last_seen_at"
+        )
+
+    @action(detail=False, methods=["post"], url_path="register")
+    def register(self, request):
+        ser = DeviceTokenRegisterSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        token = ser.validated_data["token"].strip()
+        platform = ser.validated_data.get("platform") or "unknown"
+        device_id = ser.validated_data.get("device_id")
+
+        obj, _created = DeviceToken.objects.update_or_create(
+            token=token,
+            defaults={
+                "user": request.user,
+                "platform": platform,
+                "device_id": device_id,
+                "archived": False,
+            },
+        )
+        return Response(DeviceTokenSerializer(obj).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="unregister")
+    def unregister(self, request):
+        token = str(request.data.get("token") or "").strip()
+        if not token:
+            return Response({"detail": "token is required"}, status=status.HTTP_400_BAD_REQUEST)
+        DeviceToken.objects.filter(token=token, user=request.user).update(archived=True)
+        return Response({"success": True}, status=status.HTTP_200_OK)
 
     def get_serializer_class(self):
         if self.action in ('create', 'update', 'partial_update'):

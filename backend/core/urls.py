@@ -10,7 +10,8 @@ from .views import (
     ClientUsersAPIView,
     ServiceCategoryViewSet,
     ClientViewSet,
-    ClientSignupResendAPIView
+    ClientSignupResendAPIView,
+    DeviceTokenViewSet,
 )
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
@@ -19,6 +20,7 @@ router.register(r'services', ServiceViewSet)
 router.register(r'categories', ServiceCategoryViewSet)
 router.register(r'profiles', ClientProfileViewSet)
 router.register(r'clients', ClientViewSet, basename='client')
+router.register(r'devices', DeviceTokenViewSet, basename='device')
 
 urlpatterns = [
     path('', include(router.urls)),

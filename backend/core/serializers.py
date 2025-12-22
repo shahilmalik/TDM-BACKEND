@@ -1,5 +1,22 @@
 from rest_framework import serializers
-from core.models import CustomUser, Service, ClientProfile, USER_TYPES, ServiceCategory
+from core.models import CustomUser, Service, ClientProfile, USER_TYPES, ServiceCategory, DeviceToken
+
+
+class DeviceTokenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceToken
+        fields = ("id", "token", "platform", "device_id", "last_seen_at", "created_at")
+        read_only_fields = ("id", "last_seen_at", "created_at")
+
+
+class DeviceTokenRegisterSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    platform = serializers.ChoiceField(
+        choices=["web", "android", "ios", "unknown"],
+        required=False,
+        default="unknown",
+    )
+    device_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 def _normalize_phone_for_storage(phone: str | None, country_code: str | None) -> str | None:

@@ -245,6 +245,7 @@ class InvoiceItem(BaseModel):
         # Realtime event: invoice item recorded
         try:
             from kanban.ws import send_to_client_and_user
+            from core.notifications import notify_invoice_event
 
             client_id = getattr(invoice, "client_id", None)
             if client_id:
@@ -260,6 +261,17 @@ class InvoiceItem(BaseModel):
                         "gst_amount": str(getattr(invoice, "gst_amount", ""))
                         if getattr(invoice, "gst_amount", None) is not None
                         else None,
+                    },
+                )
+
+                notify_invoice_event(
+                    invoice=invoice,
+                    title="Invoice updated",
+                    body=f"Invoice {invoice.invoice_id or invoice.pk} has a new item",
+                    data={
+                        "event": "invoice_item_recorded",
+                        "invoice_id": invoice.pk,
+                        "invoice_item_id": self.pk,
                     },
                 )
         except Exception:

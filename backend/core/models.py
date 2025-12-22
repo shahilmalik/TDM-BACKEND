@@ -130,3 +130,36 @@ class ClientProfile(BaseModel):
         super().save(*args, **kwargs)
 
 
+class DeviceToken(BaseModel):
+    """Stores a Firebase Cloud Messaging (FCM) registration token for a user."""
+
+    PLATFORM_CHOICES = [
+        ("web", "Web"),
+        ("android", "Android"),
+        ("ios", "iOS"),
+        ("unknown", "Unknown"),
+    ]
+
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="device_tokens",
+    )
+    token = models.TextField(unique=True)
+    platform = models.CharField(
+        max_length=20,
+        choices=PLATFORM_CHOICES,
+        default="unknown",
+    )
+    device_id = models.CharField(max_length=255, blank=True, null=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "last_seen_at"]),
+        ]
+
+    def __str__(self):
+        return f"DeviceToken(user={self.user_id}, platform={self.platform})"
+
+
