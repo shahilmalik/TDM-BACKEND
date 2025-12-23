@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Briefcase,
   Building,
@@ -29,34 +29,34 @@ import {
   CheckCircle2,
   RotateCcw,
   Check,
-  Image as ImageIcon,
-  Instagram,
-  Linkedin,
-  Facebook,
-  Twitter,
-  Calendar,
-  Download,
-  Filter,
-  Square,
-  CheckSquare,
-  MessageSquare,
-  Tag,
-  ListPlus,
-  Settings,
-  Smartphone,
-  CreditCard as PaymentIcon,
-  ShieldCheck,
-  Share2,
-  Key,
-  Facebook as FbIcon,
-  // Fix: Added missing Loader2 import from lucide-react
   Loader2,
   Play,
+  Instagram,
+  Linkedin,
+  Share2,
 } from "lucide-react";
 import ContentItem from "../components/ContentItem";
+import CreateTaskModal from "./admin/components/CreateTaskModal";
+import PipelineTab from "./admin/tabs/PipelineTab";
+import ClientsTab from "./admin/tabs/ClientsTab";
+import ServicesTab from "./admin/tabs/ServicesTab";
+import EmployeesTab from "./admin/tabs/EmployeesTab";
+import InvoicesTab from "./admin/tabs/InvoicesTab";
+import MetaTab from "./admin/tabs/MetaTab";
+import SettingsTab from "./admin/tabs/SettingsTab";
+import ClientModal from "./admin/components/ClientModal";
+import ClientDetailsModal from "./admin/components/ClientDetailsModal";
+import EmployeeModal from "./admin/components/EmployeeModal";
+import PaymentModeModal from "./admin/components/PaymentModeModal";
+import PaymentTermModal from "./admin/components/PaymentTermModal";
+import InvoicePreviewModal from "./admin/components/InvoicePreviewModal";
+import MetaTokenModal from "./admin/components/MetaTokenModal";
+import PaymentModal from "./admin/components/PaymentModal";
+import ServiceDetailsModal from "./admin/components/ServiceDetailsModal";
+import ServiceModal from "./admin/components/ServiceModal";
+import CategoryModal from "./admin/components/CategoryModal";
 import {
   AdminServiceItem,
-  AdminCompanyDetails,
   AdminEmployee,
   AdminInvoice,
   AdminClient,
@@ -64,18 +64,32 @@ import {
   PipelinePost,
   PipelineStatus,
   UserSubscription,
-  BackendService,
-  BackendCategory,
   PipelineConfigItem,
   MetaToken,
-  MetaPage,
+  BackendService,
+  BackendCategory,
 } from "../types";
 import {
   api,
-  mapBackendColumnToStatus,
   mapStatusToBackendColumn,
 } from "../services/api";
-import { connectEventsSocket } from "../services/eventsSocket";
+import { useAdminMessage } from "./admin/hooks/useAdminMessage";
+import { useServicesAndCategories } from "./admin/hooks/useServicesAndCategories";
+import { useClients } from "./admin/hooks/useClients";
+import { useEmployees } from "./admin/hooks/useEmployees";
+import { useInvoices } from "./admin/hooks/useInvoices";
+import { useClientMetaSync } from "./admin/hooks/useClientMetaSync";
+import { useMetaIntegration } from "./admin/hooks/useMetaIntegration";
+import { useCompanyProfile } from "./admin/hooks/useCompanyProfile";
+import { usePipeline } from "./admin/hooks/usePipeline";
+import { useCreateTask } from "./admin/hooks/useCreateTask";
+import { useInvoicePaymentOptions } from "./admin/hooks/useInvoicePaymentOptions";
+import { useInvoiceCreateForm } from "./admin/hooks/useInvoiceCreateForm";
+
+// NOTE:
+// This file is currently very large. A gradual refactor is planned where the implementation
+// will be moved into `frontend/pages/admin/*` (tabs, modals, hooks) without changing UI.
+// Do not change exports in this file until the split is complete.
 
 const PIPELINE_COLUMNS: { id: PipelineStatus; label: string; color: string }[] =
   [
@@ -102,16 +116,6 @@ interface AdminDashboardProps {
   onNavigate?: (page: string, subPage?: string) => void;
 }
 
-type InvoiceNumberInput = number | "";
-
-// Invoice creation items: allow temporary empty string for numeric inputs
-type CreateInvoiceItem = Omit<AdminInvoiceItem, "quantity" | "price" | "total"> & {
-  servicePk?: number;
-  quantity: InvoiceNumberInput;
-  price: InvoiceNumberInput;
-  total: number;
-};
-
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogout,
   onNavigate,
@@ -127,1068 +131,338 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   >("pipeline");
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
-  const [createTaskTitle, setCreateTaskTitle] = useState("");
-  const [createTaskServiceId, setCreateTaskServiceId] = useState<string>("");
-  const [createTaskInvoiceId, setCreateTaskInvoiceId] = useState<string>("");
-  const [createTaskServices, setCreateTaskServices] = useState<
-    Array<{ id: string; label: string }>
-  >([]);
-  const [createTaskInvoices, setCreateTaskInvoices] = useState<
-    Array<{ id: string; label: string }>
-  >([]);
-  const [createTaskLoading, setCreateTaskLoading] = useState(false);
-  const [createTaskError, setCreateTaskError] = useState<string | null>(null);
+  const { adminMessage, setAdminMessage } = useAdminMessage();
 
-  const [adminMessage, setAdminMessage] = useState<{
-    type: "error" | "success";
-    text: string;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!adminMessage) return;
-    const t = window.setTimeout(() => setAdminMessage(null), 5000);
-    return () => window.clearTimeout(t);
-  }, [adminMessage]);
-
-  const isManagerOrAbove =
-    (currentUser?.type ?? currentUser?.role ?? "").toString() === "manager" ||
-    (currentUser?.type ?? currentUser?.role ?? "").toString() === "superadmin";
-
-  const openCreateTaskModal = async () => {
-    if (!selectedPipelineClient) return;
-    setCreateTaskTitle("");
-    setCreateTaskServiceId("");
-    setCreateTaskInvoiceId("");
-    setCreateTaskError(null);
-    setIsCreateTaskModalOpen(true);
-    setCreateTaskLoading(true);
-    try {
-      const [invoiceRes, servicesRes]: any = await Promise.all([
-        api.invoice.getDropdownPaidInvoices(selectedPipelineClient),
-        api.services.list({ page: 1, page_size: 1000, is_active: "active" }),
-      ]);
-
-      const invoiceArr = Array.isArray(invoiceRes?.invoices)
-        ? invoiceRes.invoices
-        : [];
-      setCreateTaskInvoices(
-        invoiceArr.map((inv: any) => ({
-          id: String(inv.id),
-          label: inv.invoice_id
-            ? `${String(inv.invoice_id)} (${String(inv.date)})`
-            : `Invoice #${inv.id}`,
-        }))
-      );
-
-      const servicesData = Array.isArray(servicesRes)
-        ? servicesRes
-        : servicesRes?.results || [];
-      setCreateTaskServices(
-        (servicesData || []).map((s: any) => ({
-          id: String(s.id),
-          label: String(s.name ?? `Service #${s.id}`),
-        }))
-      );
-    } catch (e: any) {
-      setCreateTaskError(e?.message || "Failed to load invoices.");
-      setCreateTaskServices([]);
-      setCreateTaskInvoices([]);
-    } finally {
-      setCreateTaskLoading(false);
-    }
-  };
-
-  const submitCreateTask = async () => {
-    if (!selectedPipelineClient) return;
-    if (!createTaskTitle.trim() || !createTaskInvoiceId || !createTaskServiceId)
-      return;
-    setCreateTaskLoading(true);
-    setCreateTaskError(null);
-    try {
-      await api.kanban.create({
-        title: createTaskTitle.trim(),
-        client_id: Number(selectedPipelineClient),
-        invoice_id: Number(createTaskInvoiceId),
-        service_id: Number(createTaskServiceId),
-      });
-      setIsCreateTaskModalOpen(false);
-      await fetchPipeline();
-    } catch (e: any) {
-      setCreateTaskError(e?.message || "Failed to create task.");
-    } finally {
-      setCreateTaskLoading(false);
-    }
-  };
-
-  // --- DATA INITIALIZATION ---
-
-  // Services State
-  const [services, setServices] = useState<BackendService[]>([]);
-  const [categories, setCategories] = useState<BackendCategory[]>([]);
-
-  // Services list (paginated for Services tab)
-  const [servicesList, setServicesList] = useState<BackendService[]>([]);
-  const [servicesListPage, setServicesListPage] = useState(1);
-  const [servicesListHasNext, setServicesListHasNext] = useState(false);
-  const [servicesListLoading, setServicesListLoading] = useState(false);
-  const servicesListSentinelRef = useRef<HTMLDivElement | null>(null);
-
-  // Category UI State
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("All");
-  const [serviceActiveFilter, setServiceActiveFilter] = useState<
-    "all" | "active" | "inactive"
-  >("all");
-  const [serviceCategoryFilterOptions, setServiceCategoryFilterOptions] =
-    useState<{ value: string; label: string }[]>([]);
-  const [serviceActiveFilterOptions, setServiceActiveFilterOptions] = useState<
-    { value: string; label: string }[]
-  >([]);
-
-  // Company Profile State (Using Provided Data)
-  const [companyDetails, setCompanyDetails] = useState<AdminCompanyDetails>({
-    name: "",
-    address: "",
-    phone: "",
-    email: "",
-    secondaryEmail: "",
-    gstin: "",
-    bankDetails: {
-      accountName: "",
-      bankName: "",
-      accountNumber: "",
-      ifsc: "",
-    },
-    paymentModes: [],
-    paymentTerms: [],
-  });
-
-  // Employees
-  const [employees, setEmployees] = useState<AdminEmployee[]>([]);
-  const [employeesPage, setEmployeesPage] = useState(1);
-  const [employeesHasNext, setEmployeesHasNext] = useState(false);
-  const [employeesLoading, setEmployeesLoading] = useState(false);
-  const employeesSentinelRef = useRef<HTMLDivElement | null>(null);
-
-  // Invoices
-  const [invoices, setInvoices] = useState<AdminInvoice[]>([]);
-  const [invoicesPage, setInvoicesPage] = useState(1);
-  const [invoicesHasNext, setInvoicesHasNext] = useState(false);
-  const [invoicesLoading, setInvoicesLoading] = useState(false);
-  const invoicesSentinelRef = useRef<HTMLDivElement | null>(null);
-  const [invoiceDropdowns, setInvoiceDropdowns] = useState({
-    clients: [] as { id: number; name: string }[],
-    paymentModes: [] as { id: number; name: string }[],
-    paymentTerms: [] as { id: number; name: string }[],
-  });
-  const [previewData, setPreviewData] = useState<{
-    id: number | string;
-    html: string;
-  } | null>(null);
-  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
-
-  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(
-    null
-  );
-  const [invoiceHistoryById, setInvoiceHistoryById] = useState<
-    Record<
-      string,
-      {
-        loading: boolean;
-        error: string | null;
-        events: Array<{
-          type: string;
-          title: string;
-          ts: string | null;
-          meta?: Record<string, any>;
-        }>;
-      }
-    >
-  >({});
-
-  // Meta State
-  const [metaTokens, setMetaTokens] = useState<MetaToken[]>([]);
-  const [metaPages, setMetaPages] = useState<MetaPage[]>([]);
-  const [selectedClientMetaPageId, setSelectedClientMetaPageId] =
-    useState<string>("");
-  const [isMetaSyncLoading, setIsMetaSyncLoading] = useState(false);
-  const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
-  const [metaStep, setMetaStep] = useState<1 | 2>(1);
-  const [metaForm, setMetaForm] = useState({
-    account_label: "",
-    access_token: "",
-    otp: "",
-  });
-  const [metaLoading, setMetaLoading] = useState(false);
-
-  // Management Modals for Invoices
-  const [isPaymentModeModalOpen, setIsPaymentModeModalOpen] = useState(false);
-  const [newPaymentModeName, setNewPaymentModeName] = useState("");
-  const [isPaymentTermModalOpen, setIsPaymentTermModalOpen] = useState(false);
-  const [newPaymentTermName, setNewPaymentTermName] = useState("");
-
-  // Clients
-  const [clients, setClients] = useState<AdminClient[]>([]);
-  // Clients list (paginated for Clients tab; keep `clients` for Pipeline tab)
-  const [clientsList, setClientsList] = useState<AdminClient[]>([]);
-  const [clientsListPage, setClientsListPage] = useState(1);
-  const [clientsListHasNext, setClientsListHasNext] = useState(false);
-  const [clientsListLoading, setClientsListLoading] = useState(false);
-  const clientsListSentinelRef = useRef<HTMLDivElement | null>(null);
+  // Clients query state (used by `useClients`)
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState<
     "all" | "active" | "inactive"
   >("all");
 
-  // Pipeline Data
-  const [pipelineData, setPipelineData] = useState<
-    Record<string, PipelinePost[]>
-  >({});
+  // Services filters (used by `useServicesAndCategories`)
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [serviceActiveFilter, setServiceActiveFilter] = useState<
+    "all" | "active" | "inactive"
+  >("all");
 
-  // --- STATE MANAGEMENT ---
-
-  // Service Modal
-  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
-  const [selectedServiceDetail, setSelectedServiceDetail] =
-    useState<BackendService | null>(null);
-  const [isServiceDetailLoading, setIsServiceDetailLoading] = useState(false);
-  const [newService, setNewService] = useState<{
-    service_id: string;
-    name: string;
-    description: string;
-    price: number | string;
-    categoryId: string;
-    hsn: string;
-    isPipeline: boolean;
-    pipelineConfig: PipelineConfigItem[];
-    platforms: string[];
-    otherPlatform: string;
-  }>({
-    service_id: "",
-    name: "",
-    description: "",
-    price: "",
-    categoryId: "",
-    hsn: "",
-    isPipeline: false,
-    pipelineConfig: [{ prefix: "", count: 0 }],
-    platforms: [],
-    otherPlatform: "",
-  });
-  const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
-
-  // Client Modal
-  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
-  const [clientForm, setClientForm] = useState({
-    id: null as string | number | null,
-    companyName: "",
-    billingAddress: "",
-    gstin: "",
-    businessEmail: "",
-    businessPhone: "",
-    whatsappUpdates: true,
-    contactPerson: {
-      salutation: "Mr",
-      firstName: "",
-      lastName: "",
-      email: "",
-      phone: "",
-    },
-  });
-  const [editingClientId, setEditingClientId] = useState<string | null>(null);
-
-  // Employee Modal
-  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
-  const [employeeForm, setEmployeeForm] = useState({
-    salutation: "Mr",
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    role: "manager",
-  });
-  const [editingEmployeeId, setEditingEmployeeId] = useState<
-    string | number | null
-  >(null);
-
-  // Invoice State
+  // Invoices query state (used by `useInvoices`)
   const [invoiceView, setInvoiceView] = useState<"list" | "create">("list");
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string>("All");
   const [invoiceClientFilter, setInvoiceClientFilter] = useState<string>("All");
-  const [invoiceDateRange, setInvoiceDateRange] = useState({
-    start: "",
-    end: "",
-  });
-  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
-  const [invoiceStatusOptions, setInvoiceStatusOptions] = useState<
-    { value: string; label: string }[]
-  >([]);
-  const [invoiceClientOptions, setInvoiceClientOptions] = useState<
-    { id: number; name: string }[]
-  >([]);
+  const [invoiceDateRange, setInvoiceDateRange] = useState({ start: "", end: "" });
 
-  // Payment Modal
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<AdminInvoice | null>(
-    null
-  );
-  const [paymentAmountInput, setPaymentAmountInput] = useState<number>(0);
-  const [paymentModeIdInput, setPaymentModeIdInput] = useState<string>("");
-  const [paymentReferenceInput, setPaymentReferenceInput] =
-    useState<string>("");
+  // ---------------------------------------------------------------------------
+  // Restored local state that is still referenced by tabs/components.
+  // These were removed during an incomplete invoices-hook wiring pass.
 
-  // Client Details Modal
-  const [selectedClientDetail, setSelectedClientDetail] =
-    useState<AdminClient | null>(null);
+  // Pipeline selection + DnD state (used by <PipelineTab /> and pipeline handlers)
+  const [selectedPipelineClient, setSelectedPipelineClient] = useState<string>("");
+  // draggedPostId/openContentItemId now live in `usePipeline`
 
-  // Pipeline State
-  const [selectedPipelineClient, setSelectedPipelineClient] =
-    useState<string>("");
-  const [draggedPostId, setDraggedPostId] = useState<string | number | null>(
-    null
-  );
-  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [taskForm, setTaskForm] = useState<Partial<PipelinePost>>({
-    title: "",
-    platform: "instagram",
-    dueDate: "",
-    description: "",
-    assignees: [],
-  });
+  // Client details modal selection
+  const [selectedClientDetail, setSelectedClientDetail] = useState<AdminClient | null>(null);
 
-  // Post Detail / Edit Modal
-  const [selectedPost, setSelectedPost] = useState<PipelinePost | null>(null);
-  const [openContentItemId, setOpenContentItemId] = useState<
-    string | number | null
-  >(null);
+  // ---------------------------------------------------------------------------
 
-  // Invoice Form State
-  const emptyInvoiceState: {
-    clientId: string;
-    date: string;
-    dueDate: string;
-    paymentMode: string;
-    paymentTerms: string;
-    gstPercentage: InvoiceNumberInput;
-    items: CreateInvoiceItem[];
-  } = {
-    clientId: "",
-    date: new Date().toISOString().split("T")[0],
-    dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0],
-    paymentMode: "",
-    paymentTerms: "",
-    gstPercentage: 0,
-    items: [],
-  };
-  const [invoiceForm, setInvoiceForm] = useState(emptyInvoiceState);
-
-  // Initial Fetch
-  useEffect(() => {
-    const fetchData = async () => {
-      const userStr = localStorage.getItem("user");
-      if (userStr) {
-        setCurrentUser(JSON.parse(userStr));
-      }
-    };
-    fetchData();
-  }, []);
-
-  const currentUserType = String(
-    (currentUser?.type ?? currentUser?.role ?? "").toString()
-  ).toLowerCase();
-
-  const currentUserDisplayName = (() => {
-    const first = (currentUser?.first_name ?? currentUser?.firstName ?? "").toString();
-    const last = (currentUser?.last_name ?? currentUser?.lastName ?? "").toString();
-    const full = `${first} ${last}`.trim();
-    return (
-      full ||
-      (currentUser?.name ?? "").toString().trim() ||
-      (currentUser?.email ?? "").toString().trim() ||
-      ""
-    );
-  })();
-
-  const currentUserRoleLabel = (() => {
-    const raw = (currentUser?.type ?? currentUser?.role ?? "").toString();
-    if (!raw) return "";
-    return raw.replace(/_/g, " ");
-  })();
-  const isPipelineOnlyUser = ["designer", "content_writer"].includes(
-    currentUserType
-  );
-
-  const setActiveTabSafe = (
-    tab:
-      | "pipeline"
-      | "clients"
-      | "invoices"
-      | "services"
-      | "employees"
-      | "settings"
-      | "meta"
-  ) => {
-    if (isPipelineOnlyUser && tab !== "pipeline") return;
-    setActiveTab(tab);
-  };
-
-  // Hard guard: pipeline-only roles should never leave pipeline tab.
-  useEffect(() => {
-    if (!isPipelineOnlyUser) return;
-    if (activeTab !== "pipeline") setActiveTab("pipeline");
-  }, [isPipelineOnlyUser, activeTab]);
-
-  // Fetch Data when tabs active
-  useEffect(() => {
-    if (activeTab === "services") {
-      fetchServicesAndCategories();
-      resetServicesList();
-    } else if (activeTab === "employees") {
-      fetchEmployees();
-    } else if (activeTab === "clients") {
-      resetClientsList();
-    } else if (activeTab === "invoices") {
-      resetInvoicesList();
-      fetchInvoiceDropdowns();
-      fetchServicesAndCategories();
-    } else if (activeTab === "pipeline") {
-      fetchClients();
-      fetchPipeline();
-    } else if (activeTab === "meta") {
-      fetchMeta();
-    } else if (activeTab === "settings") {
-      fetchCompanyProfile();
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab !== "invoices" || invoiceView !== "list") return;
-    fetchInvoiceFilterOptions();
-    resetInvoicesList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, invoiceView]);
-
-  useEffect(() => {
-    if (activeTab !== "invoices" || invoiceView !== "list") return;
-    resetInvoicesList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoiceStatusFilter, invoiceClientFilter, invoiceDateRange.start, invoiceDateRange.end]);
-
-  useEffect(() => {
-    if (activeTab !== "invoices" || invoiceView !== "list") return;
-    const t = window.setTimeout(() => {
-      resetInvoicesList();
-    }, 300);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoiceSearch]);
-
-  useEffect(() => {
-    if (activeTab !== "clients") return;
-    const t = window.setTimeout(() => {
-      resetClientsList();
-    }, 300);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientSearch]);
-
-  useEffect(() => {
-    if (activeTab !== "clients") return;
-    resetClientsList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientFilter]);
-
-  useEffect(() => {
-    if (activeTab !== "services") return;
-    resetServicesList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryFilter]);
-
-  useEffect(() => {
-    if (activeTab !== "services") return;
-    resetServicesList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serviceActiveFilter]);
-
-  useEffect(() => {
-    if (activeTab !== "invoices" || invoiceView !== "list") return;
-    const el = invoicesSentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        fetchMoreInvoices();
-      },
-      { root: null, rootMargin: "200px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
+  // Pipeline domain (moved into hook)
+  const pipelineDomain = usePipeline({
     activeTab,
-    invoiceView,
-    invoicesHasNext,
-    invoicesLoading,
-    invoicesPage,
+    selectedPipelineClient,
+    setAdminMessage,
+  });
+  const {
+    pipelineData,
+    fetchPipeline,
+    handleScheduleById,
+    handlePipelineDragStart,
+    handlePipelineDragOver,
+    handlePipelineDrop,
+    openContentItemId,
+    setOpenContentItemId,
+  } = pipelineDomain;
+
+  const createTaskDomain = useCreateTask({
+    selectedPipelineClient,
+    fetchPipeline,
+    setAdminMessage,
+  });
+  const {
+    isCreateTaskModalOpen,
+    setIsCreateTaskModalOpen,
+    createTaskTitle,
+    setCreateTaskTitle,
+    createTaskServiceId,
+    setCreateTaskServiceId,
+    createTaskInvoiceId,
+    setCreateTaskInvoiceId,
+    createTaskServices,
+    createTaskInvoices,
+    createTaskLoading,
+    createTaskError,
+    openCreateTaskModal,
+    submitCreateTask,
+  } = createTaskDomain;
+
+  const isManagerOrAbove =
+    (currentUser?.type ?? currentUser?.role ?? "").toString() === "manager" ||
+    (currentUser?.type ?? currentUser?.role ?? "").toString() === "superadmin";
+
+  // Meta integration domain (moved into hook)
+  const metaIntegration = useMetaIntegration({ setAdminMessage });
+  const {
+    metaTokens,
+    metaPages: metaIntegrationPages,
+    fetchMeta,
+    isMetaModalOpen,
+    setIsMetaModalOpen,
+    metaStep,
+    setMetaStep,
+    metaForm,
+    setMetaForm,
+    metaLoading,
+    handleStartAddToken,
+    handleConfirmAddToken,
+  } = metaIntegration;
+
+  // --- HANDLERS (temporarily kept in AdminDashboard; next batches will move into hooks) ---
+
+  // Company profile domain (moved into hook)
+  const companyProfile = useCompanyProfile({ setAdminMessage });
+  const {
+    companyDetails,
+    setCompanyDetails,
+    fetchCompanyProfile,
+    handleSaveCompanyProfile,
+  } = companyProfile;
+
+  // clients domain (moved into hook)
+  const clientsDomain = useClients({
+    clientSearch,
+    clientFilter,
+    setAdminMessage,
+  });
+  const {
+    clients,
+    clientsList,
+    clientsListSentinelRef,
+    isClientModalOpen,
+    setIsClientModalOpen,
+    clientForm,
+    setClientForm,
+    editingClientId,
+    setEditingClientId,
+    fetchClients,
+    resetClientsList,
+    fetchMoreClientsList,
+    openCreateClientModal,
+    openEditClientModal,
+    handleSaveClient,
+    handleDeleteClient,
+    formatPhoneWithCountry,
+  } = clientsDomain;
+
+  // employees domain (moved into hook)
+  const employeesDomain = useEmployees({ setAdminMessage });
+  const {
+    employees,
+    employeesSentinelRef,
+    isEmployeeModalOpen,
+    setIsEmployeeModalOpen,
+    employeeForm,
+    setEmployeeForm,
+    editingEmployeeId,
+    setEditingEmployeeId,
+    fetchEmployees,
+    fetchMoreEmployees,
+    openCreateEmployeeModal,
+    openEditEmployeeModal,
+    handleSaveEmployee,
+    handleDeleteEmployee,
+  } = employeesDomain;
+
+  // invoices domain (moved into hook)
+  const invoicesDomain = useInvoices({
     invoiceSearch,
     invoiceStatusFilter,
     invoiceClientFilter,
-    invoiceDateRange.start,
-    invoiceDateRange.end,
-  ]);
+    invoiceDateRange,
+    setAdminMessage,
+  });
+  const {
+    invoices,
+    invoicesSentinelRef,
 
-  useEffect(() => {
-    if (activeTab !== "employees") return;
-    const el = employeesSentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        fetchMoreEmployees();
-      },
-      { root: null, rootMargin: "200px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, employeesHasNext, employeesLoading, employeesPage]);
+    selectedInvoiceIds,
+    setSelectedInvoiceIds,
 
-  useEffect(() => {
-    if (activeTab !== "clients") return;
-    const el = clientsListSentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        fetchMoreClientsList();
-      },
-      { root: null, rootMargin: "200px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeTab,
-    clientsListHasNext,
-    clientsListLoading,
-    clientsListPage,
-    clientSearch,
-    clientFilter,
-  ]);
+    invoiceDropdowns,
+    invoiceStatusOptions,
+    invoiceClientOptions,
 
-  useEffect(() => {
-    if (activeTab !== "services") return;
-    const el = servicesListSentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        fetchMoreServicesList();
-      },
-      { root: null, rootMargin: "200px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeTab,
-    servicesListHasNext,
-    servicesListLoading,
-    servicesListPage,
+    previewData,
+    isPreviewModalOpen,
+    setIsPreviewModalOpen,
+
+    expandedInvoiceId,
+    invoiceHistoryById,
+
+    isPaymentModalOpen,
+    setIsPaymentModalOpen,
+    selectedInvoice,
+    setSelectedInvoice,
+    paymentAmountInput,
+    setPaymentAmountInput,
+    paymentModeIdInput,
+    setPaymentModeIdInput,
+    paymentReferenceInput,
+    setPaymentReferenceInput,
+
+    resetInvoicesList,
+    fetchMoreInvoices,
+    fetchInvoiceFilterOptions,
+    fetchInvoiceDropdowns,
+    openRecordPaymentModal,
+    handleRecordPayment,
+    handlePreviewInvoice,
+    toggleInvoiceExpanded,
+    handleDownloadInvoice,
+    toggleInvoiceSelection,
+    toggleSelectAllVisibleInvoices,
+    handleBulkDownload,
+  } = invoicesDomain;
+
+  // client-details Meta sync (moved into hook)
+  const clientMetaSync = useClientMetaSync({ setAdminMessage });
+  const {
+    metaPages,
+    setMetaPages,
+    loadMetaPages,
+    selectedClientMetaPageId,
+    setSelectedClientMetaPageId,
+    isMetaSyncLoading,
+    syncClientMetaPage,
+    resetSelectedClientMetaPageId,
+  } = clientMetaSync;
+
+  // services domain (moved into hook)
+  const servicesDomain = useServicesAndCategories({
     categoryFilter,
     serviceActiveFilter,
-  ]);
+    setAdminMessage,
+  });
+  const {
+    services,
+    categories,
+    servicesList,
+    servicesListSentinelRef,
+    serviceCategoryFilterOptions,
+    serviceActiveFilterOptions,
+    filteredServices,
 
-  const fetchCompanyProfile = async () => {
-    try {
-      const data = await api.invoice.getSenderInfo();
+    isCategoryModalOpen,
+    setIsCategoryModalOpen,
+    newCategoryName,
+    setNewCategoryName,
 
-      const mapped = {
-        name: data?.name ?? "",
-        address: data?.address ?? "",
-        phone: data?.phone ?? "",
-        email: data?.email ?? "",
-        secondaryEmail: data?.secondary_email ?? "",
-        gstin: data?.gstin ?? "",
-        bankDetails: {
-          accountName: data?.bank_account_name ?? "",
-          bankName: data?.bank_name ?? "",
-          accountNumber: data?.bank_account_number ?? "",
-          ifsc: data?.ifsc ?? "",
-        },
-      };
+    isServiceModalOpen,
+    setIsServiceModalOpen,
+    selectedServiceDetail,
+    setSelectedServiceDetail,
+    isServiceDetailLoading,
 
-      setCompanyDetails((prev) => ({
-        ...prev,
-        ...mapped,
-        bankDetails: {
-          ...prev.bankDetails,
-          ...mapped.bankDetails,
-        },
-      }));
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to load company profile.",
-      });
+    newService,
+    setNewService,
+    editingServiceId,
+    setEditingServiceId,
+
+    openServiceDetail,
+    deleteService,
+    handleAddCategory,
+    handleDeleteCategory,
+    handleCategoryChange,
+    handleAddService,
+    handleEditService,
+    addPipelineRow,
+    removePipelineRow,
+    updatePipelineRow,
+  } = servicesDomain;
+
+  const invoicePaymentOptions = useInvoicePaymentOptions({
+    fetchInvoiceDropdowns,
+    setAdminMessage,
+  });
+  const {
+    isPaymentModeModalOpen,
+    setIsPaymentModeModalOpen,
+    newPaymentModeName,
+    setNewPaymentModeName,
+    handleAddPaymentMode,
+    handleDeletePaymentMode,
+
+    isPaymentTermModalOpen,
+    setIsPaymentTermModalOpen,
+    newPaymentTermName,
+    setNewPaymentTermName,
+    handleAddPaymentTerm,
+    handleDeletePaymentTerm,
+  } = invoicePaymentOptions;
+
+  const invoiceCreateForm = useInvoiceCreateForm({
+    services,
+    setAdminMessage,
+    onCreated: async () => {
+      setInvoiceView("list");
+      resetInvoicesList();
+    },
+  });
+  const { invoiceForm, setInvoiceForm, updateInvoiceItem, handleCreateInvoice } =
+    invoiceCreateForm;
+
+  const handleLogoutAction = () => {
+    if (window.confirm("Are you sure you want to logout?")) {
+      onLogout();
     }
   };
 
-  const fetchServicesAndCategories = async () => {
-    try {
-      const [servicesRes, fetchedCategories, dropdownsRes] = await Promise.all([
-        api.services.list({ page: 1, page_size: 1000 }),
-        api.categories.list(),
-        api.services.dropdowns(),
-      ]);
-
-      const fetchedServices = Array.isArray(servicesRes)
-        ? servicesRes
-        : servicesRes?.results || [];
-
-      setServices(fetchedServices);
-      setCategories(fetchedCategories);
-
-      const catOpts = dropdownsRes?.categories;
-      if (Array.isArray(catOpts)) {
-        setServiceCategoryFilterOptions([
-          { value: "All", label: "All" },
-          ...catOpts.map((c) => ({ value: c.name, label: c.name })),
-        ]);
-      } else {
-        setServiceCategoryFilterOptions([{ value: "All", label: "All" }]);
-      }
-
-      const opts = dropdownsRes?.is_active;
-      if (Array.isArray(opts) && opts.length > 0) {
-        setServiceActiveFilterOptions(opts);
-      } else {
-        setServiceActiveFilterOptions([
-          { value: "all", label: "All" },
-          { value: "active", label: "Active" },
-          { value: "inactive", label: "Inactive" },
-        ]);
-      }
-    } catch (error) {
-      console.error("Failed to fetch services", error);
+  const getStatusColor = (statusValue: string) => {
+    switch (statusValue) {
+      case "paid":
+        return "bg-green-50 text-green-600 border-green-200";
+      case "partially_paid":
+        return "bg-yellow-50 text-yellow-600 border-yellow-200";
+      case "cancelled":
+        return "bg-slate-50 text-slate-600 border-slate-200";
+      default:
+        return "bg-slate-50 text-slate-600 border-slate-200";
     }
   };
 
-  const resetServicesList = async () => {
-    setServicesListLoading(true);
-    try {
-      const res: any = await api.services.list({
-        page: 1,
-        page_size: 20,
-        category: categoryFilter,
-        is_active: serviceActiveFilter,
-      });
-
-      const items = Array.isArray(res) ? res : res?.results || [];
-      setServicesList(items);
-      setServicesListPage(1);
-      setServicesListHasNext(!!res?.next);
-    } catch (e) {
-      console.error("Failed to fetch services list", e);
-    } finally {
-      setServicesListLoading(false);
+  const getPlatformIcon = (platform: string) => {
+    switch (platform) {
+      case "instagram":
+        return <Instagram size={14} className="text-pink-600" />;
+      case "linkedin":
+        return <Linkedin size={14} className="text-blue-700" />;
+      default:
+        return <UserCircle size={14} />;
     }
   };
 
-  const fetchMoreServicesList = async () => {
-    if (servicesListLoading || !servicesListHasNext) return;
-    const nextPage = servicesListPage + 1;
-    setServicesListLoading(true);
-    try {
-      const res: any = await api.services.list({
-        page: nextPage,
-        page_size: 20,
-        category: categoryFilter,
-        is_active: serviceActiveFilter,
-      });
-      const items = Array.isArray(res) ? res : res?.results || [];
-      setServicesList((prev) => [...prev, ...items]);
-      setServicesListPage(nextPage);
-      setServicesListHasNext(!!res?.next);
-    } catch (e) {
-      console.error("Failed to fetch more services", e);
-    } finally {
-      setServicesListLoading(false);
-    }
-  };
-
-  const fetchEmployees = async () => {
-    setEmployeesLoading(true);
-    try {
-      const res: any = await api.employee.list({ page: 1, page_size: 20 });
-      const data = Array.isArray(res) ? res : res?.results || [];
-      const mapped = data.map((e: any) => ({
-        id: e.id,
-        name: `${e.salutation} ${e.first_name} ${e.last_name}`.trim(),
-        email: e.email,
-        phone: e.phone,
-        role: e.type,
-      }));
-      setEmployees(mapped);
-      setEmployeesPage(1);
-      setEmployeesHasNext(!!res?.next);
-    } catch (e) {
-      console.error("Failed to fetch employees", e);
-    } finally {
-      setEmployeesLoading(false);
-    }
-  };
-
-  const fetchMoreEmployees = async () => {
-    if (employeesLoading || !employeesHasNext) return;
-    const nextPage = employeesPage + 1;
-    setEmployeesLoading(true);
-    try {
-      const res: any = await api.employee.list({ page: nextPage, page_size: 20 });
-      const data = Array.isArray(res) ? res : res?.results || [];
-      const mapped = data.map((e: any) => ({
-        id: e.id,
-        name: `${e.salutation} ${e.first_name} ${e.last_name}`.trim(),
-        email: e.email,
-        phone: e.phone,
-        role: e.type,
-      }));
-      setEmployees((prev) => [...prev, ...mapped]);
-      setEmployeesPage(nextPage);
-      setEmployeesHasNext(!!res?.next);
-    } catch (e) {
-      console.error("Failed to fetch more employees", e);
-    } finally {
-      setEmployeesLoading(false);
-    }
-  };
-
-  const formatPhoneWithCountry = (countryCode?: string, phone?: string) => {
-    const p = (phone || "").toString().trim();
-    if (!p) return "";
-    if (p.startsWith("+")) return p;
-    const cc = (countryCode || "").toString().trim().replace(/^\+/, "");
-    if (!cc) return p;
-    // avoid double-prefix if phone already starts with the country digits
-    if (p.startsWith(cc)) return `+${p}`;
-    return `+${cc}${p}`;
-  };
-
-  const fetchClients = async () => {
-    try {
-      // Full client list for Pipeline tab (and any non-paginated needs)
-      const res: any = await api.clients.list({ page: 1, page_size: 1000 });
-      const data = Array.isArray(res) ? res : res?.results || [];
-      const mapped = data.map((c: any) => {
-        const u = c.user_detail || {};
-        const userId = u.id ?? c.user_id ?? c.user;
-        const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
-          u.last_name || ""
-        }`.trim();
-        const contactPhone = formatPhoneWithCountry(u.country_code, u.phone);
-        const businessPhone = formatPhoneWithCountry(
-          c.business_phone_country_code,
-          c.business_phone
-        );
-
-        return {
-          // IMPORTANT: pipeline selection must use CustomUser id (Invoice.client_id / ContentItem.client_id)
-          id: userId ?? c.id,
-          businessName: c.company_name,
-          contactName,
-          email: u.email || c.business_email,
-          phone: contactPhone || businessPhone,
-          address: c.billing_address,
-          gstin: c.gstin,
-          isActive: !!u.is_active,
-          pendingPayment: 0,
-          businessDetails: {
-            name: c.company_name,
-            address: c.billing_address,
-            gstin: c.gstin,
-            hsn: "",
-            email: c.business_email,
-            phone: businessPhone,
-            whatsappConsent: !!c.whatsapp_updates,
-          },
-          contactDetails: {
-            salutation: u.salutation,
-            firstName: u.first_name,
-            lastName: u.last_name,
-            email: u.email,
-            phone: contactPhone,
-            whatsappConsent: !!c.whatsapp_updates,
-          },
-        };
-      });
-      setClients(mapped);
-    } catch (e) {
-      console.error("Failed to fetch clients", e);
-    }
-  };
-
-  const resetClientsList = async () => {
-    setClientsListLoading(true);
-    try {
-      const res: any = await api.clients.list({
-        page: 1,
-        page_size: 20,
-        search: clientSearch || undefined,
-        status: clientFilter,
-      });
-      const data = Array.isArray(res) ? res : res?.results || [];
-
-      const mapped = data.map((c: any) => {
-        const u = c.user_detail || {};
-        const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
-          u.last_name || ""
-        }`.trim();
-        const contactPhone = formatPhoneWithCountry(u.country_code, u.phone);
-        const businessPhone = formatPhoneWithCountry(
-          c.business_phone_country_code,
-          c.business_phone
-        );
-
-        return {
-          id: c.id,
-          businessName: c.company_name,
-          contactName,
-          email: u.email || c.business_email,
-          phone: contactPhone || businessPhone,
-          address: c.billing_address,
-          gstin: c.gstin,
-          isActive: !!u.is_active,
-          pendingPayment: 0,
-          businessDetails: {
-            name: c.company_name,
-            address: c.billing_address,
-            gstin: c.gstin,
-            hsn: "",
-            email: c.business_email,
-            phone: businessPhone,
-            whatsappConsent: !!c.whatsapp_updates,
-          },
-          contactDetails: {
-            salutation: u.salutation,
-            firstName: u.first_name,
-            lastName: u.last_name,
-            email: u.email,
-            phone: contactPhone,
-            whatsappConsent: !!c.whatsapp_updates,
-          },
-        };
-      });
-
-      setClientsList(mapped);
-      setClientsListPage(1);
-      setClientsListHasNext(!!res?.next);
-    } catch (e) {
-      console.error("Failed to fetch clients list", e);
-    } finally {
-      setClientsListLoading(false);
-    }
-  };
-
-  const fetchMoreClientsList = async () => {
-    if (clientsListLoading || !clientsListHasNext) return;
-    const nextPage = clientsListPage + 1;
-    setClientsListLoading(true);
-    try {
-      const res: any = await api.clients.list({
-        page: nextPage,
-        page_size: 20,
-        search: clientSearch || undefined,
-        status: clientFilter,
-      });
-      const data = Array.isArray(res) ? res : res?.results || [];
-
-      const mapped = data.map((c: any) => {
-        const u = c.user_detail || {};
-        const contactName = `${u.salutation || ""} ${u.first_name || ""} ${
-          u.last_name || ""
-        }`.trim();
-        const contactPhone = formatPhoneWithCountry(u.country_code, u.phone);
-        const businessPhone = formatPhoneWithCountry(
-          c.business_phone_country_code,
-          c.business_phone
-        );
-
-        return {
-          id: c.id,
-          businessName: c.company_name,
-          contactName,
-          email: u.email || c.business_email,
-          phone: contactPhone || businessPhone,
-          address: c.billing_address,
-          gstin: c.gstin,
-          isActive: !!u.is_active,
-          pendingPayment: 0,
-          businessDetails: {
-            name: c.company_name,
-            address: c.billing_address,
-            gstin: c.gstin,
-            hsn: "",
-            email: c.business_email,
-            phone: businessPhone,
-            whatsappConsent: !!c.whatsapp_updates,
-          },
-          contactDetails: {
-            salutation: u.salutation,
-            firstName: u.first_name,
-            lastName: u.last_name,
-            email: u.email,
-            phone: contactPhone,
-            whatsappConsent: !!c.whatsapp_updates,
-          },
-        };
-      });
-
-      setClientsList((prev) => [...prev, ...mapped]);
-      setClientsListPage(nextPage);
-      setClientsListHasNext(!!res?.next);
-    } catch (e) {
-      console.error("Failed to fetch more clients", e);
-    } finally {
-      setClientsListLoading(false);
-    }
-  };
-
-  const fetchPipeline = async () => {
-    try {
-      const kanbanItems = await api.kanban.list();
-      const grouped: Record<string, PipelinePost[]> = {};
-
-      (kanbanItems || []).forEach((item: any) => {
-        const clientId =
-          item?.client?.id ?? item?.client_id ?? item?.client ?? null;
-        if (!clientId) return;
-        const key = String(clientId);
-
-        const post: PipelinePost = {
-          id: item.id,
-          title: item.title,
-          platform: item.platforms?.[0] || "instagram",
-          platforms: Array.isArray(item.platforms) ? item.platforms : undefined,
-          priority: item.priority || undefined,
-          unread_comments_count: Number(item.unread_comments_count ?? 0),
-          status: mapBackendColumnToStatus(item.column),
-          dueDate: item.due_date || "",
-          creative_copy: item.creative_copy || "",
-          post_caption: item.post_caption || "",
-          // backward-compat for older UI usages
-          description: item.creative_copy ?? item.description ?? "",
-          caption: item.post_caption ?? item.caption ?? "",
-          thumbnail: item.thumbnail,
-          media_assets: Array.isArray(item.media_assets)
-            ? item.media_assets
-            : undefined,
-          client: item.client
-            ? {
-                id: item.client.id,
-                first_name: item.client.first_name,
-                last_name: item.client.last_name,
-              }
-            : undefined,
-          assigned_to: item.assigned_to
-            ? {
-                first_name: item.assigned_to.first_name,
-                last_name: item.assigned_to.last_name,
-                ...(item.assigned_to.id ? { id: item.assigned_to.id } : {}),
-              }
-            : null,
-        };
-
-        grouped[key] = [...(grouped[key] || []), post];
-      });
-
-      setPipelineData({
-        ...grouped,
-      });
-    } catch (e) {
-      console.error("Failed to fetch pipeline", e);
-    }
-  };
-
-  // Live updates (unread counts, status changes, comments) via WebSocket
-  useEffect(() => {
-    if (localStorage.getItem("demoMode")) return;
-    if (activeTab !== "pipeline") return;
-
-    const token = localStorage.getItem("accessToken");
-    if (!token) return;
-    if (!selectedPipelineClient) return;
-
-    let refreshTimer: number | null = null;
-    const scheduleRefresh = () => {
-      if (refreshTimer) window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => {
-        fetchPipeline();
-      }, 250);
-    };
-
-    const disconnect = connectEventsSocket({
-      token,
-      clientId: selectedPipelineClient,
-      onEvent: (msg) => {
-        const evt = String(msg?.event || "");
-        if (
-          evt === "comment_added" ||
-          evt === "content_item_status_changed" ||
-          evt === "content_item_updated" ||
-          evt === "invoice_item_recorded" ||
-          evt === "invoice_status_changed"
-        ) {
-          scheduleRefresh();
-        }
-      },
-    });
-
-    return () => {
-      if (refreshTimer) window.clearTimeout(refreshTimer);
-      disconnect();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, selectedPipelineClient]);
-
-  const handleScheduleById = async (
-    postId: string | number,
-    scheduledAtIso: string
-  ) => {
-    if (!selectedPipelineClient) return;
-
-    setPipelineData((prev) => {
-      const next = { ...prev };
-      const list = next[selectedPipelineClient] || [];
-      next[selectedPipelineClient] = list.map((p) =>
-        p.id === postId ? { ...p, status: "scheduled" } : p
-      );
-      return next;
-    });
-
-    try {
-      await api.kanban.schedule(postId as number, scheduledAtIso);
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const visibleInvoices = invoices;
+  const visibleInvoiceIds = visibleInvoices.map((inv) => String(inv.id));
+  const allVisibleSelected =
+    visibleInvoiceIds.length > 0 &&
+    visibleInvoiceIds.every((id) => selectedInvoiceIds.includes(id));
+  const toggleSelectAllVisibleInvoicesLocal = () =>
+    toggleSelectAllVisibleInvoices(visibleInvoiceIds);
 
   const openClientDetail = async (clientId: string | number) => {
     try {
-      setSelectedClientMetaPageId("");
-
+      resetSelectedClientMetaPageId();
       // Load available Meta pages for the Sync dropdown (used in Client Details).
       // Keep this independent from the Meta tab so clients->detail always has data.
-      try {
-        const pageRes = await api.meta.listPages();
-        setMetaPages(pageRes.pages || []);
-      } catch (e) {
-        // non-fatal
-      }
+      await loadMetaPages();
 
       // show existing basic info immediately if available
       const existing =
@@ -1248,1048 +522,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleSyncClientMetaPage = async () => {
-    if (!selectedClientDetail) return;
-    if (!selectedClientMetaPageId) {
-      setAdminMessage({
-        type: "error",
-        text: "Please select a Meta account/page to sync.",
-      });
-      return;
-    }
+  // Initial bootstrap
+  useEffect(() => {
+    (async () => {
+      try {
+        const profiles = await api.core.getProfile();
+        const me = Array.isArray(profiles) ? profiles[0] : profiles;
+        setCurrentUser(me);
+      } catch (e) {
+        // ignore
+      }
+    })();
+  }, []);
 
-    setIsMetaSyncLoading(true);
+  // Pipeline refresh when client changes
+  useEffect(() => {
+    if (!selectedPipelineClient) return;
+    fetchPipeline();
+  }, [selectedPipelineClient, fetchPipeline]);
+
+  // Meta refresh when tab becomes active
+  useEffect(() => {
+    if (activeTab !== "meta") return;
+    fetchMeta();
+  }, [activeTab, fetchMeta]);
+
+  // Company profile refresh when tab becomes active
+  useEffect(() => {
+    if (activeTab !== "settings") return;
+    fetchCompanyProfile();
+  }, [activeTab, fetchCompanyProfile]);
+
+  const handleStartPipeline = async (inv: any) => {
     try {
-      await api.meta.syncClientPage({
-        client_id: selectedClientDetail.id,
-        fb_page_id: selectedClientMetaPageId,
-      });
-      setAdminMessage({ type: "success", text: "Meta account synced." });
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to sync Meta account.",
-      });
-    } finally {
-      setIsMetaSyncLoading(false);
-    }
-  };
-
-  const resetInvoicesList = async () => {
-    setInvoicesLoading(true);
-    try {
-      const response: any = await api.invoice.list({
-        page: 1,
-        page_size: 20,
-        search: invoiceSearch || undefined,
-        status:
-          invoiceStatusFilter && invoiceStatusFilter !== "All"
-            ? invoiceStatusFilter
-            : undefined,
-        client_id:
-          invoiceClientFilter && invoiceClientFilter !== "All"
-            ? invoiceClientFilter
-            : undefined,
-        start_date: invoiceDateRange.start || undefined,
-        end_date: invoiceDateRange.end || undefined,
-      });
-      const invoiceList = response?.results || response?.invoices || [];
-
-      const mapped = invoiceList.map((inv: any) => {
-        let total = inv.total_amount ? parseFloat(inv.total_amount) : 0;
-        if ((!total || total === 0) && inv.items && inv.items.length > 0) {
-          total = inv.items.reduce(
-            (sum: number, item: any) => sum + parseFloat(item.line_total || 0),
-            0
-          );
-        }
-
-        return {
-          id: inv.id,
-          invoiceNumber: inv.invoice_id,
-          date: inv.date,
-          startDate: inv.start_date ?? null,
-          startedAt: inv.started_at ?? null,
-          dueDate: inv.due_date || inv.date,
-          clientId: inv.client?.id || "",
-          clientName: inv.client
-            ? `${inv.client.first_name || ""} ${
-                inv.client.last_name || ""
-              }`.trim()
-            : "Unknown",
-          clientAddress: "",
-          items: inv.items || [],
-          subTotal: total,
-          taxTotal: parseFloat(inv.gst_amount || "0"),
-          grandTotal: total,
-          paidAmount: parseFloat(inv.paid_amount || "0"),
-          status: inv.status_label || inv.status || "Unknown",
-          statusValue: inv.status || "",
-          authorizedBy: inv.authorized_by || "System",
-          hasPipeline: !!inv.has_pipeline,
-        };
-      });
-      setInvoices(mapped);
-      setInvoicesPage(1);
-      setInvoicesHasNext(!!response?.next);
-      setSelectedInvoiceIds([]);
-    } catch (e) {
-      console.error("Failed to fetch invoices", e);
-    } finally {
-      setInvoicesLoading(false);
-    }
-  };
-
-  const fetchMoreInvoices = async () => {
-    if (invoicesLoading || !invoicesHasNext) return;
-    const nextPage = invoicesPage + 1;
-    setInvoicesLoading(true);
-    try {
-      const response: any = await api.invoice.list({
-        page: nextPage,
-        page_size: 20,
-        search: invoiceSearch || undefined,
-        status:
-          invoiceStatusFilter && invoiceStatusFilter !== "All"
-            ? invoiceStatusFilter
-            : undefined,
-        client_id:
-          invoiceClientFilter && invoiceClientFilter !== "All"
-            ? invoiceClientFilter
-            : undefined,
-        start_date: invoiceDateRange.start || undefined,
-        end_date: invoiceDateRange.end || undefined,
-      });
-      const invoiceList = response?.results || response?.invoices || [];
-
-      const mapped = invoiceList.map((inv: any) => {
-        let total = inv.total_amount ? parseFloat(inv.total_amount) : 0;
-        if ((!total || total === 0) && inv.items && inv.items.length > 0) {
-          total = inv.items.reduce(
-            (sum: number, item: any) => sum + parseFloat(item.line_total || 0),
-            0
-          );
-        }
-
-        return {
-          id: inv.id,
-          invoiceNumber: inv.invoice_id,
-          date: inv.date,
-          startDate: inv.start_date ?? null,
-          startedAt: inv.started_at ?? null,
-          dueDate: inv.due_date || inv.date,
-          clientId: inv.client?.id || "",
-          clientName: inv.client
-            ? `${inv.client.first_name || ""} ${
-                inv.client.last_name || ""
-              }`.trim()
-            : "Unknown",
-          clientAddress: "",
-          items: inv.items || [],
-          subTotal: total,
-          taxTotal: parseFloat(inv.gst_amount || "0"),
-          grandTotal: total,
-          paidAmount: parseFloat(inv.paid_amount || "0"),
-          status: inv.status_label || inv.status || "Unknown",
-          statusValue: inv.status || "",
-          authorizedBy: inv.authorized_by || "System",
-          hasPipeline: !!inv.has_pipeline,
-        };
-      });
-
-      setInvoices((prev) => [...prev, ...mapped]);
-      setInvoicesPage(nextPage);
-      setInvoicesHasNext(!!response?.next);
-    } catch (e) {
-      console.error("Failed to fetch more invoices", e);
-    } finally {
-      setInvoicesLoading(false);
-    }
-  };
-
-  const fetchInvoiceFilterOptions = async () => {
-    try {
-      const [clientsRes, statusesRes] = await Promise.all([
-        api.invoice.getDropdownClients(),
-        api.invoice.getDropdownInvoiceStatuses(),
-      ]);
-      setInvoiceClientOptions(Array.isArray(clientsRes) ? clientsRes : []);
-      setInvoiceStatusOptions(Array.isArray(statusesRes) ? statusesRes : []);
-    } catch (e) {
-      console.error("Failed to fetch invoice filter options", e);
-    }
-  };
-
-  const openRecordPaymentModal = (inv: AdminInvoice) => {
-    setSelectedInvoice(inv);
-    const pending = Math.max((inv.grandTotal || 0) - (inv.paidAmount || 0), 0);
-    setPaymentAmountInput(pending);
-    setPaymentModeIdInput("");
-    setPaymentReferenceInput("");
-    setIsPaymentModalOpen(true);
-  };
-
-  const handleRecordPayment = async () => {
-    if (!selectedInvoice) return;
-    const invoiceId = Number(selectedInvoice.id);
-    if (!invoiceId || Number.isNaN(invoiceId)) {
-      setAdminMessage({ type: "error", text: "Invalid invoice." });
-      return;
-    }
-    if (!paymentAmountInput || paymentAmountInput <= 0) {
-      setAdminMessage({ type: "error", text: "Enter a valid amount." });
-      return;
-    }
-
-    try {
-      await api.invoice.recordPayment({
-        invoice: invoiceId,
-        amount: Number(paymentAmountInput),
-        payment_mode: paymentModeIdInput ? Number(paymentModeIdInput) : null,
-        reference: paymentReferenceInput || undefined,
-      });
-      setIsPaymentModalOpen(false);
-      setSelectedInvoice(null);
-      resetInvoicesList();
-      setAdminMessage({ type: "success", text: "Payment recorded." });
-    } catch (e: any) {
-      setAdminMessage({ type: "error", text: e?.message || "Failed." });
-    }
-  };
-
-  const handleStartPipeline = async (inv: AdminInvoice) => {
-    try {
-      await api.invoice.startPipeline(Number(inv.id));
+      const invoiceId = inv?.id;
+      if (!invoiceId) return;
+      await api.invoice.startPipeline(Number(invoiceId));
       setAdminMessage({ type: "success", text: "Pipeline started." });
-      fetchPipeline();
+      resetInvoicesList();
+      await fetchPipeline();
     } catch (e: any) {
       setAdminMessage({
         type: "error",
         text: e?.message || "Failed to start pipeline.",
       });
     }
-  };
-
-  const fetchInvoiceDropdowns = async () => {
-    try {
-      const [clientsRes, paymentModesRes, paymentTermsRes] = await Promise.all(
-        [
-          api.invoice.getDropdownClients(),
-          api.invoice.getDropdownPaymentModes(),
-          api.invoice.getDropdownPaymentTerms(),
-        ]
-      );
-      setInvoiceDropdowns({
-        clients: clientsRes || [],
-        paymentModes: paymentModesRes || [],
-        paymentTerms: paymentTermsRes || [],
-      });
-    } catch (e) {
-      console.error("Failed to fetch invoice dropdowns", e);
-    }
-  };
-
-  const fetchMeta = async () => {
-    try {
-      const demoMode =
-        localStorage.getItem("demoMode") === "true" ||
-        localStorage.getItem("DEMO_META") === "true";
-
-      if (demoMode) {
-        setMetaTokens([
-          {
-            id: 2,
-            account_label: "TDM tarviz 1",
-            user_name: "Tdm Work",
-            profile_picture:
-              "https://scontent.fmaa3-2.fna.fbcdn.net/v/t1.30497-1/84628273_176159830277856_972693363922829312_nXg5HEK2noZSem5OML1ttCMySW2WHCGl061zhst2TgmS8aNvaL7Y_C71NGoYCgY4bmtrtuzpUTwJ=696BC419",
-            status: "active",
-            expires_at: "2026-02-16T23:11:56.487056Z",
-            created_at: "2025-12-18T17:41:56.500800Z",
-          },
-        ]);
-        setMetaPages([
-          {
-            account_label: "TDM tarviz 1",
-            token_id: 2,
-            fb_page_id: "906055075920800",
-            fb_page_name: "Hotel Raaj Bhaavan",
-            fb_page_picture:
-              "https://scontent.fmaa3-3.fna.fbcdn.net/v/t39.30808-1/587104605_122164363166749862_POqL-0vA&_nc_tpa=Q5bMBQHvp-xn4dRCr869fI_iqS2Hsb-rrrRJA1-HbnrtvPjRp_aQkhrfomah15tSXYsIUU2_L1cLTj4FVw&oh=00_AflBQk_XyQEP9s8KmxfSYSTauyGXuUUdURgB0Piuf_VM9Q&oe=694A204E",
-            ig_account_id: "17841478686508287",
-          },
-          {
-            account_label: "TDM tarviz 1",
-            token_id: 2,
-            fb_page_id: "793090860558655",
-            fb_page_name: "Sai Mayura TVS",
-            fb_page_picture:
-              "https://scontent.fmaa3-3.fna.fbcdn.net/v/t39.30808-1/549327586_122154197150749862_899594056",
-            ig_account_id: "17841462826367548",
-          },
-        ]);
-        return;
-      }
-
-      const [tokenRes, pageRes] = await Promise.all([
-        api.meta.listTokens(),
-        api.meta.listPages(),
-      ]);
-      setMetaTokens(tokenRes.tokens);
-      setMetaPages(pageRes.pages);
-    } catch (e) {
-      console.error("Meta fetch error", e);
-    }
-  };
-
-  // --- ROLE HELPERS ---
-  const isSuperOrManager = () =>
-    ["superadmin", "manager", "admin"].includes(
-      currentUser?.type || currentUser?.role
-    );
-
-  // --- HANDLERS: SERVICES & CATEGORIES ---
-
-  const handleAddCategory = async () => {
-    if (!newCategoryName.trim()) return;
-    try {
-      const slug = newCategoryName
-        .toLowerCase()
-        .replace(/\s+/g, "-")
-        .replace(/[^\w-]+/g, "");
-      await api.categories.create({ name: newCategoryName, slug });
-      fetchServicesAndCategories();
-      resetServicesList();
-      setNewCategoryName("");
-    } catch (error: any) {
-      setAdminMessage({ type: "error", text: error?.message || "Failed." });
-    }
-  };
-
-  const handleDeleteCategory = async (id: number) => {
-    if (!window.confirm("Delete category?")) return;
-    try {
-      await api.categories.delete(id);
-      setCategories((prev) => prev.filter((c) => c.id !== id));
-      fetchServicesAndCategories();
-      resetServicesList();
-    } catch (error: any) {
-      setAdminMessage({ type: "error", text: error?.message || "Failed." });
-    }
-  };
-
-  const handleAddService = async () => {
-    if (!newService.categoryId) {
-      setAdminMessage({ type: "error", text: "Category is required." });
-      return;
-    }
-    if (!newService.name.trim()) {
-      setAdminMessage({ type: "error", text: "Service name is required." });
-      return;
-    }
-
-    if (newService.isPipeline) {
-      const selectedPlatforms = Array.isArray((newService as any).platforms)
-        ? ((newService as any).platforms as string[])
-        : [];
-      if (selectedPlatforms.length === 0) {
-        setAdminMessage({ type: "error", text: "Select at least one platform." });
-        return;
-      }
-      if (selectedPlatforms.includes("other") && !String((newService as any).otherPlatform || "").trim()) {
-        setAdminMessage({ type: "error", text: "Type the platform name for Other." });
-        return;
-      }
-    }
-
-    try {
-      const payload: any = {
-        name: newService.name,
-        description: newService.description,
-        price: Number(newService.price),
-        category_id: parseInt(newService.categoryId),
-        hsn: newService.hsn,
-        is_active: true,
-        is_pipeline: newService.isPipeline,
-        pipeline_config: newService.isPipeline ? newService.pipelineConfig : [],
-      };
-
-      if (newService.isPipeline) {
-        payload.platforms = (newService as any).platforms || [];
-        payload.other_platform = (newService as any).otherPlatform || "";
-      }
-
-      if (editingServiceId) await api.services.update(editingServiceId, payload);
-      else await api.services.create(payload);
-
-      fetchServicesAndCategories();
-      resetServicesList();
-      setIsServiceModalOpen(false);
-      setNewService({
-        service_id: "",
-        name: "",
-        description: "",
-        price: "",
-        categoryId: "",
-        hsn: "",
-        isPipeline: false,
-        pipelineConfig: [{ prefix: "", count: 0 }],
-        platforms: [],
-        otherPlatform: "",
-      } as any);
-      setEditingServiceId(null);
-      setAdminMessage({
-        type: "success",
-        text: editingServiceId
-          ? "Service updated successfully."
-          : "Service created successfully.",
-      });
-    } catch (error: any) {
-      setAdminMessage({ type: "error", text: error?.message || "Failed." });
-    }
-  };
-
-  const handleCategoryChange = async (categoryId: string) => {
-    setNewService((p) => ({ ...p, categoryId, service_id: "" }));
-    
-    if (categoryId && !editingServiceId) {
-      try {
-        const result = await api.services.previewServiceId(parseInt(categoryId));
-        setNewService((p) => ({ ...p, service_id: result.service_id }));
-      } catch (error: any) {
-        console.error("Failed to fetch preview service ID:", error);
-      }
-    }
-  };
-
-  const handleEditService = (srv: BackendService) => {
-    setNewService({
-      service_id: srv.service_id,
-      name: srv.name,
-      description: srv.description || "",
-      price: srv.price,
-      categoryId: srv.category.id.toString(),
-      hsn: srv.hsn || "",
-      isPipeline: !!srv.is_pipeline,
-      pipelineConfig:
-        srv.pipeline_config && srv.pipeline_config.length > 0
-          ? srv.pipeline_config
-          : [{ prefix: "", count: 1 }],
-      platforms: srv.platforms || [],
-      otherPlatform: srv.other_platform || "",
-    });
-    setEditingServiceId(srv.id);
-    setSelectedServiceDetail(null); // Close the detail modal
-    setIsServiceModalOpen(true); // Open the edit modal
-  };
-
-  const openServiceDetail = async (serviceId: number | string) => {
-    setIsServiceDetailLoading(true);
-    try {
-      // optimistic: show existing row data first if available
-      const existing = servicesList.find((s) => String(s.id) === String(serviceId));
-      if (existing) setSelectedServiceDetail(existing);
-
-      const full = await api.services.get(serviceId);
-      setSelectedServiceDetail(full as any);
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to load service details.",
-      });
-    } finally {
-      setIsServiceDetailLoading(false);
-    }
-  };
-
-  const deleteService = async (id: number) => {
-    if (window.confirm("Delete service?")) {
-      try {
-        await api.services.delete(id);
-        fetchServicesAndCategories();
-        resetServicesList();
-      } catch (error: any) {
-        setAdminMessage({ type: "error", text: error?.message || "Failed." });
-      }
-    }
-  };
-
-  const addPipelineRow = () => {
-    setNewService((prev) => ({
-      ...prev,
-      pipelineConfig: [...prev.pipelineConfig, { prefix: "", count: 1 }],
-    }));
-  };
-
-  const removePipelineRow = (index: number) => {
-    setNewService((prev) => {
-      const newCfg = [...prev.pipelineConfig];
-      newCfg.splice(index, 1);
-      return { ...prev, pipelineConfig: newCfg };
-    });
-  };
-
-  const updatePipelineRow = (
-    index: number,
-    field: "prefix" | "count",
-    value: string | number
-  ) => {
-    setNewService((prev) => {
-      const newCfg = [...prev.pipelineConfig];
-      newCfg[index] = { ...newCfg[index], [field]: value };
-      return { ...prev, pipelineConfig: newCfg };
-    });
-  };
-
-  // --- HANDLERS: PAYMENT MODES & TERMS ---
-
-  const handleAddPaymentMode = async () => {
-    if (!newPaymentModeName.trim()) return;
-    try {
-      await api.invoice.createPaymentMode({ name: newPaymentModeName });
-      setNewPaymentModeName("");
-      fetchInvoiceDropdowns();
-    } catch (e: any) {
-      setAdminMessage({ type: "error", text: e?.message || "Failed." });
-    }
-  };
-
-  const handleDeletePaymentMode = async (id: number) => {
-    if (!window.confirm("Delete mode?")) return;
-    try {
-      await api.invoice.deletePaymentMode(id);
-      fetchInvoiceDropdowns();
-    } catch (e: any) {
-      setAdminMessage({ type: "error", text: e?.message || "Failed." });
-    }
-  };
-
-  const handleAddPaymentTerm = async () => {
-    if (!newPaymentTermName.trim()) return;
-    try {
-      await api.invoice.createPaymentTerm({ name: newPaymentTermName });
-      setNewPaymentTermName("");
-      fetchInvoiceDropdowns();
-    } catch (e: any) {
-      setAdminMessage({ type: "error", text: e?.message || "Failed." });
-    }
-  };
-
-  const handleDeletePaymentTerm = async (id: number) => {
-    if (!window.confirm("Delete term?")) return;
-    try {
-      await api.invoice.deletePaymentTerm(id);
-      fetchInvoiceDropdowns();
-    } catch (e: any) {
-      setAdminMessage({ type: "error", text: e?.message || "Failed." });
-    }
-  };
-
-  // --- HANDLERS: META INTEGRATION ---
-
-  const handleStartAddToken = async () => {
-    setMetaLoading(true);
-    try {
-      await api.meta.sendTokenOtp();
-      setMetaStep(2);
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: `Error sending OTP: ${e?.message || "Failed."}`,
-      });
-    } finally {
-      setMetaLoading(false);
-    }
-  };
-
-  const handleConfirmAddToken = async () => {
-    if (!metaForm.access_token || !metaForm.otp || !metaForm.account_label) {
-      setAdminMessage({ type: "error", text: "All fields are required." });
-      return;
-    }
-    setMetaLoading(true);
-    try {
-      await api.meta.createToken(metaForm);
-      setAdminMessage({
-        type: "success",
-        text: "Meta Token integrated successfully!",
-      });
-      setIsMetaModalOpen(false);
-      setMetaStep(1);
-      setMetaForm({ account_label: "", access_token: "", otp: "" });
-      fetchMeta();
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: `Error adding token: ${e?.message || "Failed."}`,
-      });
-    } finally {
-      setMetaLoading(false);
-    }
-  };
-
-  // --- HANDLERS: CLIENTS ---
-
-  const openCreateClientModal = () => {
-    setEditingClientId(null);
-    setClientForm({
-      id: null,
-      companyName: "",
-      billingAddress: "",
-      gstin: "",
-      businessEmail: "",
-      businessPhone: "",
-      whatsappUpdates: true,
-      contactPerson: {
-        salutation: "Mr",
-        firstName: "",
-        lastName: "",
-        email: "",
-        phone: "",
-      },
-    });
-    setIsClientModalOpen(true);
-  };
-
-  const openEditClientModal = (c: AdminClient) => {
-    setEditingClientId(c.id);
-    setClientForm({
-      id: c.id,
-      companyName: c.businessDetails?.name || c.businessName || "",
-      billingAddress: c.businessDetails?.address || c.address || "",
-      gstin: c.businessDetails?.gstin || c.gstin || "",
-      businessEmail: c.businessDetails?.email || "",
-      businessPhone: c.businessDetails?.phone || "",
-      whatsappUpdates: !!c.businessDetails?.whatsappConsent,
-      contactPerson: {
-        salutation: c.contactDetails?.salutation || "Mr",
-        firstName: c.contactDetails?.firstName || "",
-        lastName: c.contactDetails?.lastName || "",
-        email: c.contactDetails?.email || c.email || "",
-        phone: c.contactDetails?.phone || c.phone || "",
-      },
-    });
-    setIsClientModalOpen(true);
-  };
-
-  const handleSaveClient = async () => {
-    if (!clientForm.companyName.trim()) {
-      setAdminMessage({ type: "error", text: "Company name is required." });
-      return;
-    }
-    if (
-      !clientForm.contactPerson.firstName ||
-      !clientForm.contactPerson.lastName
-    ) {
-      setAdminMessage({
-        type: "error",
-        text: "Contact first/last name is required.",
-      });
-      return;
-    }
-    if (!clientForm.contactPerson.email) {
-      setAdminMessage({ type: "error", text: "Contact email is required." });
-      return;
-    }
-
-    const payload: any = {
-      company_name: clientForm.companyName,
-      billing_address: clientForm.billingAddress,
-      gstin: clientForm.gstin,
-      business_email: clientForm.businessEmail,
-      business_phone: clientForm.businessPhone,
-      whatsapp_updates: clientForm.whatsappUpdates,
-      contact_person: {
-        salutation: clientForm.contactPerson.salutation,
-        first_name: clientForm.contactPerson.firstName,
-        last_name: clientForm.contactPerson.lastName,
-        email: clientForm.contactPerson.email,
-        phone: clientForm.contactPerson.phone,
-      },
-    };
-
-    try {
-      if (editingClientId) {
-        await api.clients.update(editingClientId, payload);
-      } else {
-        await api.clients.create(payload);
-      }
-      setIsClientModalOpen(false);
-      fetchClients();
-      resetClientsList();
-      setAdminMessage({ type: "success", text: "Client saved." });
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to save client.",
-      });
-    }
-  };
-
-  const handleDeleteClient = async (id: string) => {
-    if (!window.confirm("Delete client?")) return;
-    try {
-      await api.clients.delete(id);
-      fetchClients();
-      resetClientsList();
-      setAdminMessage({ type: "success", text: "Client deleted." });
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to delete client.",
-      });
-    }
-  };
-
-  // --- HANDLERS: EMPLOYEES ---
-
-  const openCreateEmployeeModal = () => {
-    setEditingEmployeeId(null);
-    setEmployeeForm({
-      salutation: "Mr",
-      firstName: "",
-      lastName: "",
-      email: "",
-      phone: "",
-      role: "manager",
-    });
-    setIsEmployeeModalOpen(true);
-  };
-
-  const openEditEmployeeModal = (emp: AdminEmployee) => {
-    setEditingEmployeeId(emp.id);
-    // best-effort split name
-    const parts = (emp.name || "").trim().split(/\s+/);
-    const salutation = ["Mr", "Mrs", "Ms", "Dr"].includes(parts[0])
-      ? parts[0]
-      : "Mr";
-    const firstName = salutation === parts[0] ? parts[1] || "" : parts[0] || "";
-    const lastName =
-      salutation === parts[0]
-        ? parts.slice(2).join(" ")
-        : parts.slice(1).join(" ");
-    setEmployeeForm({
-      salutation,
-      firstName,
-      lastName,
-      email: emp.email,
-      phone: emp.phone,
-      role: emp.role,
-    });
-    setIsEmployeeModalOpen(true);
-  };
-
-  const handleSaveEmployee = async () => {
-    if (
-      !employeeForm.firstName ||
-      !employeeForm.lastName ||
-      !employeeForm.email
-    ) {
-      setAdminMessage({ type: "error", text: "Name and email are required." });
-      return;
-    }
-    const payload: any = {
-      salutation: employeeForm.salutation,
-      first_name: employeeForm.firstName,
-      last_name: employeeForm.lastName,
-      email: employeeForm.email,
-      phone: employeeForm.phone,
-      type: employeeForm.role,
-    };
-    try {
-      if (editingEmployeeId) {
-        await api.employee.update(editingEmployeeId, payload);
-      } else {
-        await api.employee.create(payload);
-      }
-      setIsEmployeeModalOpen(false);
-      fetchEmployees();
-      setAdminMessage({ type: "success", text: "Employee saved." });
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to save employee.",
-      });
-    }
-  };
-
-  const handleSaveCompanyProfile = async () => {
-    try {
-      const payload = {
-        name: companyDetails.name,
-        address: companyDetails.address,
-        phone: companyDetails.phone,
-        email: companyDetails.email,
-        secondary_email: companyDetails.secondaryEmail,
-        gstin: companyDetails.gstin,
-        bank_account_name: companyDetails.bankDetails.accountName,
-        bank_account_number: companyDetails.bankDetails.accountNumber,
-        bank_name: companyDetails.bankDetails.bankName,
-        ifsc: companyDetails.bankDetails.ifsc,
-      };
-      await api.invoice.updateSenderInfo(payload);
-      setAdminMessage({ type: "success", text: "Company profile updated successfully." });
-      fetchCompanyProfile();
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to update company profile.",
-      });
-    }
-  };
-
-  const handleDeleteEmployee = async (id: string) => {
-    if (!window.confirm("Delete employee?")) return;
-    try {
-      await api.employee.delete(id);
-      fetchEmployees();
-      setAdminMessage({ type: "success", text: "Employee deleted." });
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to delete employee.",
-      });
-    }
-  };
-
-  const handleCreateInvoice = async () => {
-    if (
-      !invoiceForm.clientId ||
-      !invoiceForm.paymentMode ||
-      !invoiceForm.paymentTerms ||
-      invoiceForm.items.length === 0
-    ) {
-      setAdminMessage({ type: "error", text: "Fill all required fields." });
-      return;
-    }
-    const payload = {
-      client: parseInt(invoiceForm.clientId),
-      payment_mode: parseInt(invoiceForm.paymentMode),
-      payment_term: parseInt(invoiceForm.paymentTerms),
-      start_date: invoiceForm.date,
-      gst_percentage: Number(invoiceForm.gstPercentage || 0),
-      items: invoiceForm.items.map((item) => ({
-        service: item.servicePk,
-        description: item.description || item.name,
-        unit_price: String(item.price || 0),
-        quantity: Number(item.quantity || 0),
-      })),
-    };
-    try {
-      await api.invoice.create(payload);
-      setInvoiceView("list");
-      setInvoiceForm(emptyInvoiceState);
-      resetInvoicesList();
-    } catch (e: any) {
-      setAdminMessage({ type: "error", text: e?.message || "Failed." });
-    }
-  };
-
-  const handlePreviewInvoice = async (id: number | string) => {
-    try {
-      const data = await api.invoice.preview(id);
-      setPreviewData(data);
-      setIsPreviewModalOpen(true);
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: `Failed to preview: ${e?.message || "Failed."}`,
-      });
-    }
-  };
-
-  const toggleInvoiceExpanded = async (inv: AdminInvoice) => {
-    const id = String(inv.id);
-    const next = expandedInvoiceId === id ? null : id;
-    setExpandedInvoiceId(next);
-
-    if (!next) return;
-    if (invoiceHistoryById[next]?.loading) return;
-    if (invoiceHistoryById[next]?.events?.length) return;
-
-    setInvoiceHistoryById((prev) => ({
-      ...prev,
-      [next]: { loading: true, error: null, events: [] },
-    }));
-
-    try {
-      const res = await api.invoice.history(next);
-      const events = Array.isArray((res as any)?.events) ? (res as any).events : [];
-      setInvoiceHistoryById((prev) => ({
-        ...prev,
-        [next]: { loading: false, error: null, events },
-      }));
-    } catch (e: any) {
-      setInvoiceHistoryById((prev) => ({
-        ...prev,
-        [next]: {
-          loading: false,
-          error: e?.message || "Failed to load history.",
-          events: [],
-        },
-      }));
-    }
-  };
-
-  const handleDownloadInvoice = async (
-    id: number | string,
-    invoiceNo?: string
-  ) => {
-    try {
-      const blob = await api.invoice.downloadPdf(id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${invoiceNo || `invoice-${id}`}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e: any) {
-      setAdminMessage({
-        type: "error",
-        text: e?.message || "Failed to download.",
-      });
-    }
-  };
-
-  const calculateInvoiceTotals = () => {
-    const gst = Number(invoiceForm.gstPercentage || 0);
-    const subTotal = invoiceForm.items.reduce((acc, item) => {
-      const price = Number(item.price || 0);
-      const quantity = Number(item.quantity || 0);
-      return acc + price * quantity;
-    }, 0);
-    const taxTotal = subTotal * (gst / 100);
-    const grandTotal = subTotal + taxTotal;
-    return { subTotal, taxTotal, grandTotal };
-  };
-
-  const updateInvoiceItem = (
-    index: number,
-    field: keyof CreateInvoiceItem,
-    value: any
-  ) => {
-    const newItems = [...invoiceForm.items];
-    const item = { ...newItems[index] };
-    if (field === "servicePk") {
-      const service = services.find((s) => s.id === parseInt(value));
-      if (service) {
-        item.servicePk = service.id;
-        item.serviceId = service.service_id;
-        item.name = service.name;
-        item.description = service.description || "";
-        item.hsn = service.hsn || "";
-        item.price = Number(service.price);
-      }
-    } else {
-      (item as any)[field] = value;
-    }
-    const gst = Number(invoiceForm.gstPercentage || 0);
-    const basePrice = Number(item.price || 0) * Number(item.quantity || 0);
-    item.total =
-      basePrice + basePrice * (gst / 100);
-    newItems[index] = item;
-    setInvoiceForm((prev) => ({ ...prev, items: newItems }));
-  };
-
-  const handleLogoutAction = () => {
-    if (window.confirm("Are you sure you want to logout?")) {
-      onLogout();
-    }
-  };
-
-  const getStatusColor = (statusValue: string) => {
-    switch (statusValue) {
-      case "paid":
-        return "bg-green-50 text-green-600 border-green-200";
-      case "partially_paid":
-        return "bg-yellow-50 text-yellow-600 border-yellow-200";
-      case "cancelled":
-        return "bg-slate-50 text-slate-600 border-slate-200";
-      default:
-        return "bg-slate-50 text-slate-600 border-slate-200";
-    }
-  };
-
-  const getPlatformIcon = (platform: string) => {
-    switch (platform) {
-      case "instagram":
-        return <Instagram size={14} className="text-pink-600" />;
-      case "linkedin":
-        return <Linkedin size={14} className="text-blue-700" />;
-      default:
-        return <UserCircle size={14} />;
-    }
-  };
-
-  const visibleInvoices = invoices;
-  const filteredServices = servicesList;
-
-  const toggleInvoiceSelection = (id: string) => {
-    setSelectedInvoiceIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
-  };
-
-  const visibleInvoiceIds = visibleInvoices.map((inv) => inv.id);
-  const allVisibleSelected =
-    visibleInvoiceIds.length > 0 &&
-    visibleInvoiceIds.every((id) => selectedInvoiceIds.includes(id));
-
-  const toggleSelectAllVisibleInvoices = () => {
-    setSelectedInvoiceIds((prev) => {
-      if (allVisibleSelected) {
-        return prev.filter((id) => !visibleInvoiceIds.includes(id));
-      }
-      return Array.from(new Set([...prev, ...visibleInvoiceIds]));
-    });
-  };
-
-  const handleBulkDownload = () => {
-    if (selectedInvoiceIds.length === 0) return;
-    setAdminMessage({
-      type: "success",
-      text: `Selected ${selectedInvoiceIds.length} invoices. Bulk ZIP download is not implemented yet.`,
-    });
-  };
-
-  const handlePipelineDragStart = (
-    e: React.DragEvent,
-    postId: string | number
-  ) => {
-    setDraggedPostId(postId);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handlePipelineDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handlePipelineDrop = async (
-    e: React.DragEvent,
-    status: PipelineStatus
-  ) => {
-    e.preventDefault();
-    if (!draggedPostId || !selectedPipelineClient) return;
-
-    setPipelineData((prev) => ({
-      ...prev,
-      [selectedPipelineClient]: prev[selectedPipelineClient].map((post) =>
-        post.id === draggedPostId ? { ...post, status } : post
-      ),
-    }));
-
-    try {
-      await api.kanban.move(
-        Number(draggedPostId),
-        mapStatusToBackendColumn(status)
-      );
-    } catch (e) {
-      console.error("Failed to move item", e);
-    }
-
-    setDraggedPostId(null);
   };
 
   return (
@@ -2301,14 +578,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             Tarviz<span className="text-[#FF6B6B]">Admin</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">Internal Dashboard</p>
-          {currentUserDisplayName && (
+          {currentUser?.name && (
             <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
               <div className="text-sm font-bold text-white leading-tight">
-                {currentUserDisplayName}
+                {currentUser.name}
               </div>
-              {currentUserRoleLabel && (
+              {currentUser?.role && (
                 <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-1">
-                  {currentUserRoleLabel}
+                  {currentUser.role}
                 </div>
               )}
             </div>
@@ -2316,7 +593,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
         <nav className="flex-1 px-4 space-y-2 pb-4">
           <button
-            onClick={() => setActiveTabSafe("pipeline")}
+            onClick={() => setActiveTab("pipeline")}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
               activeTab === "pipeline"
                 ? "bg-[#FF6B6B] text-white"
@@ -2325,70 +602,66 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <Kanban size={20} /> Content Pipeline
           </button>
-          {!isPipelineOnlyUser && (
-            <>
-              <button
-                onClick={() => setActiveTabSafe("clients")}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                  activeTab === "clients"
-                    ? "bg-[#FF6B6B] text-white"
-                    : "text-slate-400 hover:bg-white/5"
-                }`}
-              >
-                <UserCircle size={20} /> Clients
-              </button>
-              <button
-                onClick={() => setActiveTabSafe("invoices")}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                  activeTab === "invoices"
-                    ? "bg-[#FF6B6B] text-white"
-                    : "text-slate-400 hover:bg-white/5"
-                }`}
-              >
-                <FileSpreadsheet size={20} /> Invoices
-              </button>
-              <button
-                onClick={() => setActiveTabSafe("services")}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                  activeTab === "services"
-                    ? "bg-[#FF6B6B] text-white"
-                    : "text-slate-400 hover:bg-white/5"
-                }`}
-              >
-                <Briefcase size={20} /> Services
-              </button>
-              <button
-                onClick={() => setActiveTabSafe("employees")}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                  activeTab === "employees"
-                    ? "bg-[#FF6B6B] text-white"
-                    : "text-slate-400 hover:bg-white/5"
-                }`}
-              >
-                <Users size={20} /> Employees
-              </button>
-              <button
-                onClick={() => setActiveTabSafe("meta")}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                  activeTab === "meta"
-                    ? "bg-[#FF6B6B] text-white"
-                    : "text-slate-400 hover:bg-white/5"
-                }`}
-              >
-                <Share2 size={20} /> Integrate Meta
-              </button>
-              <button
-                onClick={() => setActiveTabSafe("settings")}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                  activeTab === "settings"
-                    ? "bg-[#FF6B6B] text-white"
-                    : "text-slate-400 hover:bg-white/5"
-                }`}
-              >
-                <Building size={20} /> Company Profile
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => setActiveTab("clients")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+              activeTab === "clients"
+                ? "bg-[#FF6B6B] text-white"
+                : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            <UserCircle size={20} /> Clients
+          </button>
+          <button
+            onClick={() => setActiveTab("invoices")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+              activeTab === "invoices"
+                ? "bg-[#FF6B6B] text-white"
+                : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            <FileSpreadsheet size={20} /> Invoices
+          </button>
+          <button
+            onClick={() => setActiveTab("services")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+              activeTab === "services"
+                ? "bg-[#FF6B6B] text-white"
+                : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            <Briefcase size={20} /> Services
+          </button>
+          <button
+            onClick={() => setActiveTab("employees")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+              activeTab === "employees"
+                ? "bg-[#FF6B6B] text-white"
+                : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            <Users size={20} /> Employees
+          </button>
+          <button
+            onClick={() => setActiveTab("meta")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+              activeTab === "meta"
+                ? "bg-[#FF6B6B] text-white"
+                : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            <Share2 size={20} /> Integrate Meta
+          </button>
+          <button
+            onClick={() => setActiveTab("settings")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+              activeTab === "settings"
+                ? "bg-[#FF6B6B] text-white"
+                : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            <Building size={20} /> Company Profile
+          </button>
         </nav>
         <div className="p-4 border-t border-slate-700">
           <button
@@ -2413,3070 +686,304 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
         {/* PIPELINE TAB */}
         {activeTab === "pipeline" && (
-          <div className="h-full flex flex-col animate-in fade-in duration-300">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-800">
-                  Content Pipeline
-                </h2>
-                <p className="text-slate-500 text-sm">
-                  Manage client social media workflows
-                </p>
-              </div>
-              <div className="flex items-center gap-4">
-                <select
-                  className="p-2 border border-gray-300 bg-white rounded-lg outline-none min-w-[250px] focus:border-[#6C5CE7]"
-                  value={selectedPipelineClient}
-                  onChange={(e) => setSelectedPipelineClient(e.target.value)}
-                >
-                  <option value="">-- Select Client --</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.businessName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {selectedPipelineClient ? (
-              <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-                <div className="flex h-full gap-4 min-w-[1600px]">
-                  {PIPELINE_COLUMNS.map((column) => {
-                    let posts =
-                      pipelineData[selectedPipelineClient]?.filter(
-                        (p) => p.status === column.id
-                      ) || [];
-                    return (
-                      <div
-                        key={column.id}
-                        className={`flex flex-col w-72 shrink-0 min-h-[500px] rounded-2xl bg-white border-t-4 ${column.color} shadow-sm border-x border-b border-gray-200`}
-                        onDragOver={handlePipelineDragOver}
-                        onDrop={(e) => handlePipelineDrop(e, column.id)}
-                      >
-                        <div className="p-3 border-b border-gray-100 flex justify-between items-center">
-                          <h3 className="font-bold text-sm text-slate-700">
-                            {column.label}
-                          </h3>
-                          <div className="flex items-center gap-2">
-                            {column.id === "backlog" && isManagerOrAbove && (
-                              <button
-                                type="button"
-                                onClick={openCreateTaskModal}
-                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
-                                title="Add task"
-                              >
-                                <Plus size={16} />
-                              </button>
-                            )}
-                            <span className="bg-slate-100 px-2 py-0.5 rounded-full text-xs font-bold text-slate-500">
-                              {posts.length}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                          {posts.map((post) => (
-                            <ContentItem
-                              key={post.id}
-                              post={post}
-                              isAdmin={true}
-                              onDragStart={handlePipelineDragStart}
-                              onSchedule={handleScheduleById}
-                              onRefresh={fetchPipeline}
-                              renderModal={false}
-                              onOpen={(p) => setOpenContentItemId(p.id)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-3xl border-2 border-dashed border-slate-200 text-slate-400">
-                <Kanban size={48} className="mb-4 opacity-50" />
-                <p className="text-lg font-medium">
-                  Select a client to view their content pipeline
-                </p>
-              </div>
-            )}
-
-            {/* Keep the modal mounted outside the columns so it doesn't close when the item moves columns */}
-            {openContentItemId != null && (
-              (() => {
-                if (!selectedPipelineClient) return null;
-                const list = pipelineData[selectedPipelineClient] || [];
-                const openPost = list.find((p) => p.id === openContentItemId);
-                if (!openPost) return null;
-                return (
-                  <ContentItem
-                    key={openPost.id}
-                    post={openPost}
-                    isAdmin={true}
-                    hideCard={true}
-                    open={true}
-                    onOpenChange={(open) => {
-                      if (!open) setOpenContentItemId(null);
-                    }}
-                    onSchedule={handleScheduleById}
-                    onRefresh={fetchPipeline}
-                  />
-                );
-              })()
-            )}
-
-            {isCreateTaskModalOpen && (
-              <div
-                className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60"
-                onClick={() => setIsCreateTaskModalOpen(false)}
-              >
-                <div
-                  className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-100 p-6"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <div>
-                      <h3 className="text-lg font-extrabold text-slate-900">
-                        Add Task
-                      </h3>
-                      <p className="text-sm text-slate-500">
-                        Tasks must be linked to an invoice and start in Backlog.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
-                      onClick={() => setIsCreateTaskModalOpen(false)}
-                      title="Close"
-                    >
-                      <X size={18} />
-                    </button>
-                  </div>
-
-                  {createTaskError && (
-                    <div className="mb-3 p-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-sm">
-                      {createTaskError}
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
-                        Title
-                      </label>
-                      <input
-                        value={createTaskTitle}
-                        onChange={(e) => setCreateTaskTitle(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#6C5CE7]"
-                        placeholder="Enter title..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
-                        Service
-                      </label>
-                      <select
-                        value={createTaskServiceId}
-                        onChange={(e) => setCreateTaskServiceId(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#6C5CE7]"
-                        disabled={createTaskLoading}
-                      >
-                        <option value="">
-                          {createTaskLoading
-                            ? "Loading services..."
-                            : "Select a service"}
-                        </option>
-                        {createTaskServices.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
-                        Invoice
-                      </label>
-                      <select
-                        value={createTaskInvoiceId}
-                        onChange={(e) => setCreateTaskInvoiceId(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#6C5CE7]"
-                        disabled={createTaskLoading}
-                      >
-                        <option value="">
-                          {createTaskLoading
-                            ? "Loading invoices..."
-                            : "Select an invoice"}
-                        </option>
-                        {createTaskInvoices.map((inv) => (
-                          <option key={inv.id} value={inv.id}>
-                            {inv.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setIsCreateTaskModalOpen(false)}
-                      className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!createTaskTitle.trim() || !createTaskServiceId || !createTaskInvoiceId || createTaskLoading}
-                      onClick={submitCreateTask}
-                      className="flex-1 py-3 bg-[#6C5CE7] text-white rounded-xl font-bold disabled:opacity-50 hover:bg-violet-700 transition-all"
-                    >
-                      Create
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <PipelineTab
+            clients={clients}
+            selectedPipelineClient={selectedPipelineClient}
+            setSelectedPipelineClient={setSelectedPipelineClient}
+            PIPELINE_COLUMNS={PIPELINE_COLUMNS}
+            pipelineData={pipelineData}
+            isManagerOrAbove={isManagerOrAbove}
+            handlePipelineDragOver={handlePipelineDragOver}
+            handlePipelineDrop={handlePipelineDrop}
+            handlePipelineDragStart={handlePipelineDragStart}
+            openCreateTaskModal={openCreateTaskModal}
+            fetchPipeline={fetchPipeline}
+            handleScheduleById={handleScheduleById}
+            openContentItemId={openContentItemId}
+            setOpenContentItemId={setOpenContentItemId}
+            isCreateTaskModalOpen={isCreateTaskModalOpen}
+            setIsCreateTaskModalOpen={setIsCreateTaskModalOpen}
+            createTaskTitle={createTaskTitle}
+            setCreateTaskTitle={setCreateTaskTitle}
+            createTaskServiceId={createTaskServiceId}
+            setCreateTaskServiceId={setCreateTaskServiceId}
+            createTaskInvoiceId={createTaskInvoiceId}
+            setCreateTaskInvoiceId={setCreateTaskInvoiceId}
+            createTaskServices={createTaskServices}
+            createTaskInvoices={createTaskInvoices}
+            createTaskLoading={createTaskLoading}
+            createTaskError={createTaskError}
+            submitCreateTask={submitCreateTask}
+          />
         )}
 
         {/* CLIENTS TAB */}
         {activeTab === "clients" && (
-          <div className="space-y-6 animate-in fade-in duration-300 pb-12">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-extrabold text-slate-800">
-                  Clients
-                </h2>
-                <p className="text-slate-500">
-                  Create and manage client accounts.
-                </p>
-              </div>
-              <button
-                onClick={openCreateClientModal}
-                className="bg-[#0F172A] text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-slate-800 font-bold shadow-lg transition-all"
-              >
-                <Plus size={20} /> Add Client
-              </button>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5">
-              <div className="flex flex-col md:flex-row md:items-center gap-3 justify-between">
-                <div className="relative flex-1">
-                  <Search
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                    size={18}
-                  />
-                  <input
-                    value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    placeholder="Search clients..."
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <select
-                  value={clientFilter}
-                  onChange={(e) => setClientFilter(e.target.value as any)}
-                  className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                >
-                  <option value="all">All</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    <th className="px-6 py-4 font-bold text-slate-600">Business</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Contact</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Email</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Phone</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {clientsList.map((c) => (
-                      <tr
-                        key={c.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => openClientDetail(c.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            openClientDetail(c.id);
-                          }
-                        }}
-                        className="hover:bg-slate-50 transition-colors cursor-pointer"
-                      >
-                        <td className="px-6 py-4 font-bold text-slate-800">
-                          {c.businessName}
-                        </td>
-                        <td className="px-6 py-4 text-slate-800">
-                          {c.contactName || "—"}
-                        </td>
-                        <td className="px-6 py-4 text-slate-800">
-                          {c.email || "—"}
-                        </td>
-                        <td className="px-6 py-4 text-slate-800">
-                          {c.phone || "—"}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                              c.isActive
-                                ? "bg-green-50 text-green-600 border-green-200"
-                                : "bg-slate-50 text-slate-600 border-slate-200"
-                            }`}
-                          >
-                            {c.isActive ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                      </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {clientsList.length === 0 && (
-                <div className="p-12 text-center text-slate-400">
-                  <UserCircle size={44} className="mx-auto mb-3 opacity-40" />
-                  No clients yet.
-                </div>
-              )}
-
-              <div ref={clientsListSentinelRef} />
-            </div>
-          </div>
+          <ClientsTab
+            clientSearch={clientSearch}
+            setClientSearch={setClientSearch}
+            clientFilter={clientFilter}
+            setClientFilter={setClientFilter}
+            clientsList={clientsList}
+            openCreateClientModal={openCreateClientModal}
+            openClientDetail={openClientDetail}
+            clientsListSentinelRef={clientsListSentinelRef}
+          />
         )}
 
         {/* SERVICES TAB */}
         {activeTab === "services" && (
-          <div className="space-y-6 animate-in fade-in duration-300 pb-12">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-extrabold text-slate-800">
-                  Services
-                </h2>
-                <p className="text-slate-500">
-                  Manage service catalog and categories.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsCategoryModalOpen(true)}
-                  className="bg-white border border-slate-200 text-slate-700 px-5 py-3 rounded-xl font-bold hover:bg-slate-50"
-                >
-                  Manage Categories
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingServiceId(null);
-                    setNewService({
-                      service_id: "",
-                      name: "",
-                      description: "",
-                      price: "",
-                      categoryId: "",
-                      hsn: "",
-                      isPipeline: false,
-                      pipelineConfig: [{ prefix: "", count: 0 }],
-                      platforms: [],
-                      otherPlatform: "",
-                    });
-                    setIsServiceModalOpen(true);
-                  }}
-                  className="bg-[#0F172A] text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-slate-800 font-bold shadow-lg transition-all"
-                >
-                  <Plus size={20} /> Add Service
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
-                <Filter size={16} />
-                <span>Filters:</span>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 text-sm font-medium">Category</span>
-                  <select
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  >
-                    {(serviceCategoryFilterOptions.length
-                      ? serviceCategoryFilterOptions
-                      : [{ value: "All", label: "All" }]
-                    ).map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 text-sm font-medium">Status</span>
-                  <select
-                    value={serviceActiveFilter}
-                    onChange={(e) =>
-                      setServiceActiveFilter(e.target.value as any)
-                    }
-                    className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  >
-                    {(serviceActiveFilterOptions.length
-                      ? serviceActiveFilterOptions
-                      : [
-                          { value: "all", label: "All" },
-                          { value: "active", label: "Active" },
-                          { value: "inactive", label: "Inactive" },
-                        ]
-                    ).map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    <th className="px-6 py-4 font-bold text-slate-600">Service ID</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Service</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Category</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Status</th>
-                    <th className="px-6 py-4 font-bold text-slate-600 text-right">Price</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredServices.map((srv) => (
-                    <tr
-                      key={srv.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => openServiceDetail(srv.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          openServiceDetail(srv.id);
-                        }
-                      }}
-                      className="hover:bg-slate-50 transition-colors cursor-pointer"
-                    >
-                      <td className="px-6 py-4 font-mono text-sm text-slate-500">
-                        {srv.service_id}
-                      </td>
-                      <td className="px-6 py-4 font-bold text-slate-800">
-                        {srv.name}
-                      </td>
-                      <td className="px-6 py-4 text-slate-800">
-                        {srv.category?.name || "—"}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
-                            srv.is_active
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-slate-100 text-slate-600 border-slate-200"
-                          }`}
-                        >
-                          {srv.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right text-slate-800 font-bold">
-                        ₹{Number(srv.price || 0).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {servicesList.length === 0 && (
-                <div className="p-12 text-center text-slate-400">
-                  <Briefcase size={44} className="mx-auto mb-3 opacity-40" />
-                  No services yet.
-                </div>
-              )}
-
-              <div ref={servicesListSentinelRef} />
-            </div>
-          </div>
+          <ServicesTab
+            categoryFilter={categoryFilter}
+            setCategoryFilter={setCategoryFilter}
+            serviceActiveFilter={serviceActiveFilter}
+            setServiceActiveFilter={setServiceActiveFilter}
+            serviceCategoryFilterOptions={serviceCategoryFilterOptions}
+            serviceActiveFilterOptions={serviceActiveFilterOptions}
+            filteredServices={filteredServices}
+            servicesList={servicesList}
+            servicesListSentinelRef={servicesListSentinelRef}
+            openServiceDetail={openServiceDetail}
+            setIsCategoryModalOpen={setIsCategoryModalOpen}
+            setEditingServiceId={setEditingServiceId}
+            setNewService={setNewService}
+            setIsServiceModalOpen={setIsServiceModalOpen}
+          />
         )}
 
         {/* EMPLOYEES TAB */}
         {activeTab === "employees" && (
-          <div className="space-y-6 animate-in fade-in duration-300 pb-12">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-extrabold text-slate-800">
-                  Employees
-                </h2>
-                <p className="text-slate-500">Manage internal team accounts.</p>
-              </div>
-              <button
-                onClick={openCreateEmployeeModal}
-                className="bg-[#0F172A] text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-slate-800 font-bold shadow-lg transition-all"
-              >
-                <Plus size={20} /> Add Employee
-              </button>
-            </div>
-
-            <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    <th className="px-6 py-4 font-bold text-slate-600">Name</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Role</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Email</th>
-                    <th className="px-6 py-4 font-bold text-slate-600">Phone</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {employees.map((e) => (
-                    <tr
-                      key={e.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => openEditEmployeeModal(e)}
-                      onKeyDown={(evt) => {
-                        if (evt.key === "Enter" || evt.key === " ") {
-                          evt.preventDefault();
-                          openEditEmployeeModal(e);
-                        }
-                      }}
-                      className="hover:bg-slate-50 transition-colors cursor-pointer"
-                    >
-                      <td className="px-6 py-4 font-bold text-slate-800">
-                        {e.name}
-                      </td>
-                      <td className="px-6 py-4 text-slate-800">
-                        {e.role || "—"}
-                      </td>
-                      <td className="px-6 py-4 text-slate-800">
-                        {e.email || "—"}
-                      </td>
-                      <td className="px-6 py-4 text-slate-800">
-                        {e.phone || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {employees.length === 0 && (
-                <div className="p-12 text-center text-slate-400">
-                  <Users size={44} className="mx-auto mb-3 opacity-40" />
-                  No employees yet.
-                </div>
-              )}
-
-              <div ref={employeesSentinelRef} />
-            </div>
-          </div>
+          <EmployeesTab
+            employees={employees}
+            openCreateEmployeeModal={openCreateEmployeeModal}
+            openEditEmployeeModal={openEditEmployeeModal}
+            employeesSentinelRef={employeesSentinelRef}
+          />
         )}
 
         {/* INVOICES TAB */}
         {activeTab === "invoices" && (
-          <div className="space-y-6 animate-in fade-in duration-300 pb-12">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-extrabold text-slate-800">
-                  Invoices
-                </h2>
-                <p className="text-slate-500">
-                  Create invoices and track payments.
-                </p>
-              </div>
-              {invoiceView === "list" ? (
-                <button
-                  onClick={() => setInvoiceView("create")}
-                  className="bg-[#0F172A] text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-slate-800 font-bold shadow-lg transition-all"
-                >
-                  <Plus size={20} /> Create Invoice
-                </button>
-              ) : (
-                <button
-                  onClick={() => setInvoiceView("list")}
-                  className="bg-white border border-slate-200 text-slate-700 px-6 py-3 rounded-xl font-bold hover:bg-slate-50"
-                >
-                  Back to List
-                </button>
-              )}
-            </div>
-
-            {invoiceView === "list" ? (
-              <>
-                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 space-y-3">
-                  <div className="relative">
-                    <Search
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                      size={18}
-                    />
-                    <input
-                      value={invoiceSearch}
-                      onChange={(e) => setInvoiceSearch(e.target.value)}
-                      placeholder="Search by client name or invoice ID..."
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-
-                  <div className="flex flex-col md:flex-row md:items-center gap-3 justify-between">
-                    <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1">
-                      <select
-                        value={invoiceStatusFilter}
-                        onChange={(e) => setInvoiceStatusFilter(e.target.value)}
-                        className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                      >
-                        <option value="All">All Status</option>
-                        {invoiceStatusOptions.map((s) => (
-                          <option key={s.value} value={s.value}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </select>
-
-                      <select
-                        value={invoiceClientFilter}
-                        onChange={(e) => setInvoiceClientFilter(e.target.value)}
-                        className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                      >
-                        <option value="All">All Clients</option>
-                        {invoiceClientOptions.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="date"
-                          value={invoiceDateRange.start}
-                          onChange={(e) =>
-                            setInvoiceDateRange((p) => ({
-                              ...p,
-                              start: e.target.value,
-                            }))
-                          }
-                          className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        />
-                        <span className="text-slate-400 text-sm">to</span>
-                        <input
-                          type="date"
-                          value={invoiceDateRange.end}
-                          onChange={(e) =>
-                            setInvoiceDateRange((p) => ({
-                              ...p,
-                              end: e.target.value,
-                            }))
-                          }
-                          className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {selectedInvoiceIds.length > 0 && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={toggleSelectAllVisibleInvoices}
-                          className="bg-white border border-slate-200 text-slate-700 px-4 py-3 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
-                          title={
-                            allVisibleSelected
-                              ? "Unselect all visible"
-                              : "Select all visible"
-                          }
-                        >
-                          {allVisibleSelected ? (
-                            <CheckSquare size={18} />
-                          ) : (
-                            <Square size={18} />
-                          )}
-                          Select All
-                        </button>
-
-                        <button
-                          onClick={handleBulkDownload}
-                          className="bg-white border border-slate-200 text-slate-700 px-5 py-3 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
-                        >
-                          <Download size={18} /> Bulk Download (
-                          {selectedInvoiceIds.length})
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b">
-                      <tr>
-                        <th className="px-6 py-4 font-bold text-slate-600">Select</th>
-                        <th className="px-6 py-4 font-bold text-slate-600">Invoice ID</th>
-                        <th className="px-6 py-4 font-bold text-slate-600">Client</th>
-                        <th className="px-6 py-4 font-bold text-slate-600">Date</th>
-                        <th className="px-6 py-4 font-bold text-slate-600">Status</th>
-                        <th className="px-6 py-4 font-bold text-slate-600 text-right">Amount</th>
-                        <th className="px-6 py-4 font-bold text-slate-600 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {visibleInvoices.map((inv) => {
-                        const rowId = String(inv.id);
-                        const isExpanded = expandedInvoiceId === rowId;
-                        const historyState = invoiceHistoryById[rowId];
-                        const canStartPipeline =
-                          inv.status === "Paid" || inv.status === "Partially Paid";
-
-                        return (
-                          <React.Fragment key={inv.id}>
-                            <tr
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => toggleInvoiceExpanded(inv)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  toggleInvoiceExpanded(inv);
-                                }
-                              }}
-                              className={
-                                "transition-colors cursor-pointer " +
-                                (isExpanded ? "bg-slate-50" : "hover:bg-slate-50")
-                              }
-                            >
-                              <td className="px-6 py-4">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleInvoiceSelection(inv.id);
-                                  }}
-                                  className="text-slate-500 hover:text-slate-700"
-                                  title="Select"
-                                >
-                                  {selectedInvoiceIds.includes(inv.id) ? (
-                                    <CheckSquare size={18} />
-                                  ) : (
-                                    <Square size={18} />
-                                  )}
-                                </button>
-                              </td>
-                              <td className="px-6 py-4 font-mono text-sm text-slate-500">
-                                {inv.invoiceNumber}
-                              </td>
-                              <td className="px-6 py-4 text-slate-800 font-medium">
-                                {inv.clientName}
-                              </td>
-                              <td className="px-6 py-4 text-slate-800">{inv.date}</td>
-                              <td className="px-6 py-4">
-                                <span
-                                  className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(
-                                    (inv as any).statusValue
-                                  )}`}
-                                >
-                                  {inv.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-slate-800 font-bold text-right">
-                                ₹{Number(inv.grandTotal || 0).toLocaleString()}
-                              </td>
-                              <td className="px-6 py-4 text-right whitespace-nowrap">
-                                {(inv as any).statusValue !== "paid" &&
-                                  (inv as any).statusValue !== "cancelled" && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openRecordPaymentModal(inv);
-                                      }}
-                                      className="font-bold text-sm text-slate-700 hover:underline mr-4"
-                                    >
-                                      <PaymentIcon size={16} className="inline mr-1" />
-                                      Pay
-                                    </button>
-                                  )}
-
-                                {(inv as any).statusValue === "paid" && inv.hasPipeline && (
-                                  inv.startedAt ? (
-                                    <span
-                                      className="font-bold text-sm text-slate-400 mr-4"
-                                      title={
-                                        inv.startedAt
-                                          ? `Started at ${new Date(inv.startedAt).toLocaleString()}`
-                                          : "Started"
-                                      }
-                                    >
-                                      Started
-                                    </span>
-                                  ) : (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleStartPipeline(inv);
-                                      }}
-                                      title="Start pipeline"
-                                      className="font-bold text-sm text-slate-700 hover:underline mr-4"
-                                    >
-                                      <Play size={16} className="inline mr-1" /> Start
-                                    </button>
-                                  )
-                                )}
-
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDownloadInvoice(
-                                      Number(inv.id),
-                                      inv.invoiceNumber
-                                    );
-                                  }}
-                                  className="font-bold text-sm text-[#6C5CE7] hover:underline"
-                                >
-                                  <Download size={16} className="inline mr-1" /> PDF
-                                </button>
-                              </td>
-                            </tr>
-
-                            {isExpanded && (
-                              <tr className="bg-white">
-                                <td colSpan={7} className="px-6 pb-6">
-                                  <div className="mt-3 bg-slate-50 border border-slate-200 rounded-2xl p-5">
-                                    <div className="flex items-center justify-between mb-4">
-                                      <div>
-                                        <h4 className="font-extrabold text-slate-800">
-                                          Invoice History
-                                        </h4>
-                                        <p className="text-xs text-slate-500">
-                                          {inv.invoiceNumber} • {inv.clientName}
-                                        </p>
-                                        {historyState?.events?.[0]?.type ===
-                                          "created" &&
-                                          historyState.events[0].meta
-                                            ?.created_by && (
-                                            <p className="mt-1 text-xs text-slate-500">
-                                              Created by{" "}
-                                              {
-                                                historyState.events[0].meta
-                                                  .created_by
-                                              }
-                                            </p>
-                                          )}
-                                      </div>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handlePreviewInvoice(Number(inv.id));
-                                        }}
-                                        className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold hover:bg-slate-50"
-                                        type="button"
-                                      >
-                                        Preview
-                                      </button>
-                                    </div>
-
-                                    {historyState?.loading && (
-                                      <div className="text-sm text-slate-500">
-                                        Loading history...
-                                      </div>
-                                    )}
-
-                                    {historyState?.error && (
-                                      <div className="text-sm text-red-600">
-                                        {historyState.error}
-                                      </div>
-                                    )}
-
-                                    {!historyState?.loading &&
-                                      !historyState?.error && (
-                                        <div className="space-y-3">
-                                          {(historyState?.events || []).length ===
-                                          0 ? (
-                                            <div className="text-sm text-slate-500">
-                                              No history yet.
-                                            </div>
-                                          ) : (
-                                            <div className="space-y-3">
-                                              {(historyState?.events || []).map(
-                                                (ev, idx) => {
-                                                  const when = ev.ts
-                                                    ? new Date(ev.ts).toLocaleString()
-                                                    : "—";
-                                                  const isPayment =
-                                                    ev.type === "payment";
-                                                  const isPipeline =
-                                                    ev.type ===
-                                                    "pipeline_started";
-
-                                                  const dotClass = isPayment
-                                                    ? "bg-emerald-500"
-                                                    : isPipeline
-                                                    ? "bg-[#6C5CE7]"
-                                                    : "bg-slate-400";
-
-                                                  const amount =
-                                                    isPayment && ev.meta?.amount
-                                                      ? `₹${Number(
-                                                          ev.meta.amount
-                                                        ).toLocaleString()}`
-                                                      : null;
-
-                                                  return (
-                                                    <div
-                                                      key={`${ev.type}-${idx}`}
-                                                      className="flex gap-3"
-                                                    >
-                                                      <div className="flex flex-col items-center">
-                                                        <div
-                                                          className={`w-3 h-3 rounded-full ${dotClass}`}
-                                                        />
-                                                        {idx !==
-                                                          (historyState?.events || [])
-                                                            .length -
-                                                            1 && (
-                                                          <div className="w-px flex-1 bg-slate-200" />
-                                                        )}
-                                                      </div>
-                                                      <div className="flex-1">
-                                                        <div className="flex items-center justify-between gap-4">
-                                                          <div className="font-bold text-slate-800 text-sm">
-                                                            {ev.title}
-                                                            {amount ? (
-                                                              <span className="ml-2 text-emerald-600">
-                                                                {amount}
-                                                              </span>
-                                                            ) : null}
-                                                          </div>
-                                                          <div className="text-xs text-slate-400 font-medium">
-                                                            {when}
-                                                          </div>
-                                                        </div>
-                                                        {isPayment && (
-                                                          <div className="text-xs text-slate-500 mt-1">
-                                                            {(ev.meta?.payment_mode &&
-                                                              `Mode: ${ev.meta.payment_mode}`) ||
-                                                              ""}
-                                                            {ev.meta?.reference
-                                                              ? ` • Ref: ${ev.meta.reference}`
-                                                              : ""}
-                                                            {ev.meta?.received_by
-                                                              ? ` • By: ${ev.meta.received_by}`
-                                                              : ""}
-                                                          </div>
-                                                        )}
-                                                        {isPipeline &&
-                                                          typeof ev.meta
-                                                            ?.created_items ===
-                                                            "number" && (
-                                                            <div className="text-xs text-slate-500 mt-1">
-                                                              Created items: {ev.meta.created_items}
-                                                            </div>
-                                                          )}
-                                                      </div>
-                                                    </div>
-                                                  );
-                                                }
-                                              )}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-
-                  {visibleInvoices.length === 0 && (
-                    <div className="p-12 text-center text-slate-400">
-                      <FileSpreadsheet
-                        size={44}
-                        className="mx-auto mb-3 opacity-40"
-                      />
-                      No invoices.
-                    </div>
-                  )}
-
-                  <div ref={invoicesSentinelRef} />
-                </div>
-              </>
-            ) : (
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Client
-                    </label>
-                    <select
-                      value={invoiceForm.clientId}
-                      onChange={(e) =>
-                        setInvoiceForm((p) => ({
-                          ...p,
-                          clientId: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    >
-                      <option value="">-- Select Client --</option>
-                      {invoiceDropdowns.clients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Start Date
-                    </label>
-                    <input
-                      type="date"
-                      value={invoiceForm.date}
-                      onChange={(e) =>
-                        setInvoiceForm((p) => ({
-                          ...p,
-                          date: e.target.value,
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      GST %
-                    </label>
-                    <input
-                      type="number"
-                      value={invoiceForm.gstPercentage}
-                      onChange={(e) =>
-                        setInvoiceForm((p) => ({
-                          ...p,
-                          gstPercentage:
-                            e.target.value === "" ? "" : Number(e.target.value),
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Payment Mode
-                    </label>
-                    <div className="flex gap-2">
-                      <select
-                        value={invoiceForm.paymentMode}
-                        onChange={(e) =>
-                          setInvoiceForm((p) => ({
-                            ...p,
-                            paymentMode: e.target.value,
-                          }))
-                        }
-                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                      >
-                        <option value="">-- Select --</option>
-                        {invoiceDropdowns.paymentModes.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => setIsPaymentModeModalOpen(true)}
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 font-bold"
-                        type="button"
-                      >
-                        Manage
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Payment Terms
-                    </label>
-                    <div className="flex gap-2">
-                      <select
-                        value={invoiceForm.paymentTerms}
-                        onChange={(e) =>
-                          setInvoiceForm((p) => ({
-                            ...p,
-                            paymentTerms: e.target.value,
-                          }))
-                        }
-                        className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                      >
-                        <option value="">-- Select --</option>
-                        {invoiceDropdowns.paymentTerms.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => setIsPaymentTermModalOpen(true)}
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 font-bold"
-                        type="button"
-                      >
-                        Manage
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-8">
-                  <div className="flex justify-between items-center mb-3">
-                    <h3 className="font-bold text-slate-800">Items</h3>
-                    <button
-                      onClick={() =>
-                        setInvoiceForm((p) => ({
-                          ...p,
-                          items: [
-                            ...p.items,
-                            {
-                              serviceId: "",
-                              name: "",
-                              description: "",
-                              hsn: "",
-                              quantity: 1,
-                              price: 0,
-                              taxRate: 0,
-                              total: 0,
-                            } as CreateInvoiceItem,
-                          ],
-                        }))
-                      }
-                      className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
-                      type="button"
-                    >
-                      <Plus size={16} /> Add Item
-                    </button>
-                  </div>
-
-                  <div className="space-y-3">
-                    {invoiceForm.items.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="grid md:grid-cols-5 gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4"
-                      >
-                        <div className="md:col-span-2">
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                            Service
-                          </label>
-                          <select
-                            value={(item as any).servicePk || ""}
-                            onChange={(e) =>
-                              updateInvoiceItem(
-                                idx,
-                                "servicePk" as any,
-                                e.target.value
-                              )
-                            }
-                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none"
-                          >
-                            <option value="">-- Select Service --</option>
-                            {services.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                            Qty
-                          </label>
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) =>
-                              updateInvoiceItem(
-                                idx,
-                                "quantity",
-                                e.target.value === "" ? "" : Number(e.target.value)
-                              )
-                            }
-                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                            Unit Price
-                          </label>
-                          <input
-                            type="number"
-                            value={item.price}
-                            onChange={(e) =>
-                              updateInvoiceItem(
-                                idx,
-                                "price",
-                                e.target.value === "" ? "" : Number(e.target.value)
-                              )
-                            }
-                            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl outline-none"
-                          />
-                        </div>
-                        <div className="flex items-end justify-between gap-2">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                              Total
-                            </label>
-                            <div className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-800">
-                              {Number(item.total || 0).toFixed(2)}
-                            </div>
-                          </div>
-                          <button
-                            onClick={() =>
-                              setInvoiceForm((p) => ({
-                                ...p,
-                                items: p.items.filter((_, i) => i !== idx),
-                              }))
-                            }
-                            className="p-3 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
-                            title="Remove"
-                            type="button"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-6 flex justify-end">
-                    <button
-                      onClick={handleCreateInvoice}
-                      className="bg-[#6C5CE7] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#5a4ad1] shadow-lg shadow-violet-200 flex items-center gap-2"
-                    >
-                      <Save size={18} /> Create Invoice
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <InvoicesTab
+            invoiceView={invoiceView}
+            setInvoiceView={setInvoiceView}
+            invoiceSearch={invoiceSearch}
+            setInvoiceSearch={setInvoiceSearch}
+            invoiceStatusFilter={invoiceStatusFilter}
+            setInvoiceStatusFilter={setInvoiceStatusFilter}
+            invoiceStatusOptions={invoiceStatusOptions}
+            invoiceClientFilter={invoiceClientFilter}
+            setInvoiceClientFilter={setInvoiceClientFilter}
+            invoiceClientOptions={invoiceClientOptions}
+            invoiceDateRange={invoiceDateRange}
+            setInvoiceDateRange={setInvoiceDateRange}
+            selectedInvoiceIds={selectedInvoiceIds}
+            toggleSelectAllVisibleInvoices={toggleSelectAllVisibleInvoicesLocal}
+            allVisibleSelected={allVisibleSelected}
+            handleBulkDownload={handleBulkDownload}
+            toggleInvoiceSelection={toggleInvoiceSelection}
+            visibleInvoices={visibleInvoices}
+            expandedInvoiceId={expandedInvoiceId}
+            invoiceHistoryById={invoiceHistoryById}
+            toggleInvoiceExpanded={toggleInvoiceExpanded}
+            getStatusColor={getStatusColor}
+            openRecordPaymentModal={openRecordPaymentModal}
+            handleDownloadInvoice={handleDownloadInvoice}
+            handlePreviewInvoice={handlePreviewInvoice}
+            invoicesSentinelRef={invoicesSentinelRef}
+            invoiceForm={invoiceForm}
+            setInvoiceForm={setInvoiceForm}
+            invoiceDropdowns={invoiceDropdowns}
+            updateInvoiceItem={updateInvoiceItem}
+            handleCreateInvoice={handleCreateInvoice}
+            services={services}
+            setIsPaymentModeModalOpen={setIsPaymentModeModalOpen}
+            setIsPaymentTermModalOpen={setIsPaymentTermModalOpen}
+            handleStartPipeline={handleStartPipeline}
+          />
         )}
 
         {/* META INTEGRATION TAB */}
         {activeTab === "meta" && (
-          <div className="space-y-10 animate-in fade-in duration-500 pb-20">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-extrabold text-slate-800">
-                  Meta Integration
-                </h2>
-                <p className="text-slate-500">
-                  Manage Facebook & Instagram account access tokens.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsMetaModalOpen(true)}
-                className="bg-[#0F172A] text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-slate-800 font-bold shadow-lg transition-all"
-              >
-                <Plus size={20} /> Add Access Token
-              </button>
-            </div>
-
-            {/* Tokens Section */}
-            <section>
-              <h3 className="text-lg font-bold text-slate-700 mb-6 flex items-center gap-2">
-                <Key size={18} className="text-[#6C5CE7]" /> Integrated Tokens
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {metaTokens.map((token) => (
-                  <div
-                    key={token.id}
-                    className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative group overflow-hidden"
-                  >
-                    <div className="absolute top-0 right-0 p-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                          token.status === "active"
-                            ? "bg-emerald-50 text-emerald-600 border border-emerald-100"
-                            : "bg-red-50 text-red-600 border border-red-100"
-                        }`}
-                      >
-                        {token.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-slate-50 shadow-inner bg-slate-100 flex-shrink-0">
-                        <img
-                          src={token.profile_picture}
-                          alt={token.user_name}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 leading-tight">
-                          {token.account_label}
-                        </h4>
-                        <p className="text-xs text-slate-400 font-medium">
-                          User: {token.user_name}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="space-y-2 pt-4 border-t border-slate-50">
-                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                        <span>Created At</span>
-                        <span className="text-slate-600">
-                          {new Date(token.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                        <span>Expires At</span>
-                        <span className="text-slate-600">
-                          {new Date(token.expires_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {metaTokens.length === 0 && (
-                  <div className="col-span-full py-12 text-center bg-white rounded-3xl border-2 border-dashed border-slate-200">
-                    <Key
-                      size={48}
-                      className="mx-auto mb-4 text-slate-300 opacity-50"
-                    />
-                    <p className="text-slate-400 font-medium">
-                      No tokens integrated yet.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* Pages Section */}
-            <section>
-              <h3 className="text-lg font-bold text-slate-700 mb-6 flex items-center gap-2">
-                <FbIcon size={18} className="text-blue-600" /> Linked Pages & IG
-                Accounts
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {metaPages.map((page) => (
-                  <div
-                    key={`${page.token_id}-${page.fb_page_id}`}
-                    className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden shadow-sm flex-shrink-0 bg-slate-50">
-                        <img
-                          src={page.fb_page_picture}
-                          alt={page.fb_page_name}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-slate-900 truncate">
-                          {page.fb_page_name}
-                        </h4>
-                        <p className="text-[10px] font-bold text-[#6C5CE7] uppercase tracking-widest">
-                          {page.account_label}
-                        </p>
-                      </div>
-                      <div className="flex -space-x-1">
-                        <div
-                          className="w-6 h-6 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center border border-white"
-                          title="Facebook Page"
-                        >
-                          <FbIcon size={12} />
-                        </div>
-                        {page.ig_account_id && (
-                          <div
-                            className="w-6 h-6 rounded-full bg-pink-50 text-pink-600 flex items-center justify-center border border-white"
-                            title="Instagram Linked"
-                          >
-                            <Instagram size={12} />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+          <MetaTab
+            setIsMetaModalOpen={setIsMetaModalOpen}
+            metaTokens={metaTokens}
+            metaPages={metaIntegrationPages}
+          />
         )}
 
         {/* SETTINGS TAB */}
         {activeTab === "settings" && (
-          <div className="space-y-8 animate-in fade-in duration-500 max-w-4xl pb-12">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-extrabold text-slate-800">
-                  Company Profile
-                </h2>
-                <p className="text-slate-500">
-                  Master settings for Tarviz Digimart agency details.
-                </p>
-              </div>
-              <button
-                onClick={handleSaveCompanyProfile}
-                className="flex items-center gap-2 bg-[#6C5CE7] text-white font-bold px-6 py-2.5 rounded-xl shadow-lg shadow-violet-200 transition-all hover:bg-[#5a4ad1]"
-              >
-                <Save size={18} /> Save Changes
-              </button>
-            </div>
-            <div className="grid gap-8">
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="bg-slate-50 px-8 py-4 border-b border-slate-100 flex items-center gap-2">
-                  <Building size={20} className="text-[#FF6B6B]" />
-                  <h3 className="font-bold text-slate-800">
-                    General Information
-                  </h3>
-                </div>
-                <div className="p-8 space-y-6">
-                  <div className="grid md:grid-cols-2 gap-8">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        Agency Name
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.name}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            name: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        GSTIN
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.gstin}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            gstin: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-8">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        Primary Email
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.email}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            email: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        Secondary Email
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.secondaryEmail}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            secondaryEmail: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-8">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        Contact Phone
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.phone}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            phone: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        Address
-                      </label>
-                      <textarea
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none resize-none"
-                        rows={2}
-                        value={companyDetails.address}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            address: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="bg-slate-50 px-8 py-4 border-b border-slate-100 flex items-center gap-2">
-                  <Landmark size={20} className="text-blue-500" />
-                  <h3 className="font-bold text-slate-800">
-                    Bank Account Details
-                  </h3>
-                </div>
-                <div className="p-8 space-y-6">
-                  <div className="grid md:grid-cols-2 gap-8">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        Account Name
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.bankDetails.accountName}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            bankDetails: {
-                              ...companyDetails.bankDetails,
-                              accountName: e.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        Bank Name
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.bankDetails.bankName}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            bankDetails: {
-                              ...companyDetails.bankDetails,
-                              bankName: e.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-8">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        Account Number
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.bankDetails.accountNumber}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            bankDetails: {
-                              ...companyDetails.bankDetails,
-                              accountNumber: e.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                        IFSC Code
-                      </label>
-                      <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        value={companyDetails.bankDetails.ifsc}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            bankDetails: {
-                              ...companyDetails.bankDetails,
-                              ifsc: e.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SettingsTab
+            handleSaveCompanyProfile={handleSaveCompanyProfile}
+            companyDetails={companyDetails}
+            setCompanyDetails={setCompanyDetails}
+          />
         )}
+
       </main>
 
       {/* CLIENT MODAL */}
-      {isClientModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <UserCircle size={20} className="text-[#6C5CE7]" />
-                {editingClientId ? "Edit Client" : "Add Client"}
-              </h3>
-              <button
-                onClick={() => setIsClientModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-6 overflow-y-auto max-h-[75vh]">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Company Name
-                  </label>
-                  <input
-                    value={clientForm.companyName}
-                    onChange={(e) =>
-                      setClientForm((p) => ({
-                        ...p,
-                        companyName: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    GSTIN
-                  </label>
-                  <input
-                    value={clientForm.gstin}
-                    onChange={(e) =>
-                      setClientForm((p) => ({ ...p, gstin: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Billing Address
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={clientForm.billingAddress}
-                    onChange={(e) =>
-                      setClientForm((p) => ({
-                        ...p,
-                        billingAddress: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Business Email
-                  </label>
-                  <input
-                    value={clientForm.businessEmail}
-                    onChange={(e) =>
-                      setClientForm((p) => ({
-                        ...p,
-                        businessEmail: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Business Phone
-                  </label>
-                  <input
-                    value={clientForm.businessPhone}
-                    onChange={(e) =>
-                      setClientForm((p) => ({
-                        ...p,
-                        businessPhone: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-6">
-                <h4 className="font-bold text-slate-800 mb-4">
-                  Contact Person
-                </h4>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Salutation
-                    </label>
-                    <select
-                      value={clientForm.contactPerson.salutation}
-                      onChange={(e) =>
-                        setClientForm((p) => ({
-                          ...p,
-                          contactPerson: {
-                            ...p.contactPerson,
-                            salutation: e.target.value,
-                          },
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    >
-                      <option value="Mr">Mr</option>
-                      <option value="Mrs">Mrs</option>
-                      <option value="Ms">Ms</option>
-                      <option value="Dr">Dr</option>
-                    </select>
-                  </div>
-                  <div />
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      First Name
-                    </label>
-                    <input
-                      value={clientForm.contactPerson.firstName}
-                      onChange={(e) =>
-                        setClientForm((p) => ({
-                          ...p,
-                          contactPerson: {
-                            ...p.contactPerson,
-                            firstName: e.target.value,
-                          },
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Last Name
-                    </label>
-                    <input
-                      value={clientForm.contactPerson.lastName}
-                      onChange={(e) =>
-                        setClientForm((p) => ({
-                          ...p,
-                          contactPerson: {
-                            ...p.contactPerson,
-                            lastName: e.target.value,
-                          },
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Email
-                    </label>
-                    <input
-                      value={clientForm.contactPerson.email}
-                      onChange={(e) =>
-                        setClientForm((p) => ({
-                          ...p,
-                          contactPerson: {
-                            ...p.contactPerson,
-                            email: e.target.value,
-                          },
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Phone
-                    </label>
-                    <input
-                      value={clientForm.contactPerson.phone}
-                      onChange={(e) =>
-                        setClientForm((p) => ({
-                          ...p,
-                          contactPerson: {
-                            ...p.contactPerson,
-                            phone: e.target.value,
-                          },
-                        }))
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
-              <button
-                onClick={() => setIsClientModalOpen(false)}
-                className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveClient}
-                className="bg-[#6C5CE7] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#5a4ad1]"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ClientModal
+        open={isClientModalOpen}
+        editingClientId={editingClientId}
+        clientForm={clientForm as any}
+        setClientForm={setClientForm as any}
+        onClose={() => setIsClientModalOpen(false)}
+        onSave={handleSaveClient}
+      />
 
       {/* CLIENT DETAILS MODAL */}
-      {selectedClientDetail && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSelectedClientDetail(null);
-          }}
-        >
-          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Eye size={20} className="text-[#6C5CE7]" /> Client Details
-              </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    openEditClientModal(selectedClientDetail);
-                    setSelectedClientDetail(null);
-                  }}
-                  className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1"
-                >
-                  <Edit2 size={16} /> Edit
-                </button>
-                <button
-                  onClick={async () => {
-                    const ok = window.confirm("Delete client?");
-                    if (!ok) return;
-                    await handleDeleteClient(selectedClientDetail.id);
-                    setSelectedClientDetail(null);
-                  }}
-                  className="px-3 py-2 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1"
-                >
-                  <Trash2 size={16} /> Delete
-                </button>
-                <button
-                  onClick={() => setSelectedClientDetail(null)}
-                  className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-5 overflow-y-auto max-h-[75vh]">
-              <div>
-                <div className="font-bold text-slate-900 text-lg">
-                  {selectedClientDetail.businessName}
-                </div>
-                <div className="mt-1 text-sm text-slate-500 flex items-center gap-2">
-                  <ShieldCheck size={14} />
-                  {selectedClientDetail.isActive ? "Active" : "Inactive"}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                    Business
-                  </div>
-                  <div className="space-y-2 text-slate-700">
-                    <div className="flex items-start gap-2">
-                      <MapPin size={14} className="mt-0.5" />
-                      <span className="whitespace-pre-line">
-                        {selectedClientDetail.businessDetails?.address ||
-                          selectedClientDetail.address ||
-                          "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <FileText size={14} />
-                      <span>GSTIN: {selectedClientDetail.gstin || "—"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Mail size={14} />
-                      <span>
-                        Business Email:{" "}
-                        {selectedClientDetail.businessDetails?.email || "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Phone size={14} />
-                      <span>
-                        Business Phone:{" "}
-                        {selectedClientDetail.businessDetails?.phone || "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 size={14} />
-                      <span>
-                        WhatsApp Updates:{" "}
-                        {selectedClientDetail.businessDetails?.whatsappConsent
-                          ? "Yes"
-                          : "No"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                    Responsible Person
-                  </div>
-                  <div className="font-bold text-slate-800">
-                    {selectedClientDetail.contactName || "—"}
-                  </div>
-                  <div className="mt-2 space-y-2 text-slate-700">
-                    <div className="flex items-center gap-2">
-                      <Mail size={14} />
-                      <span>Email: {selectedClientDetail.email || "—"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Phone size={14} />
-                      <span>Phone: {selectedClientDetail.phone || "—"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <UserCircle size={14} />
-                      <span>Role: client</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Everything else from backend (excluding updated_at / archived info) */}
-              {((selectedClientDetail as any).__backend?.profile ||
-                (selectedClientDetail as any).__backend?.user) && (
-                <div className="bg-white border border-slate-100 rounded-2xl p-4">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                    Additional Details
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                    <div className="text-slate-700">
-                      <span className="text-slate-500">Client Code:</span>{" "}
-                      {(selectedClientDetail as any).__backend?.profile
-                        ?.client_code || "—"}
-                    </div>
-                    <div className="text-slate-700">
-                      <span className="text-slate-500">
-                        Business Email (raw):
-                      </span>{" "}
-                      {(selectedClientDetail as any).__backend?.profile
-                        ?.business_email || "—"}
-                    </div>
-                    <div className="text-slate-700">
-                      <span className="text-slate-500">
-                        Business Phone (raw):
-                      </span>{" "}
-                      {formatPhoneWithCountry(
-                        (selectedClientDetail as any).__backend?.profile
-                          ?.business_phone_country_code,
-                        (selectedClientDetail as any).__backend?.profile
-                          ?.business_phone
-                      ) || "—"}
-                    </div>
-                    <div className="text-slate-700">
-                      <span className="text-slate-500">Profile Created:</span>{" "}
-                      {(selectedClientDetail as any).__backend?.profile
-                        ?.created_at
-                        ? new Date(
-                            (
-                              selectedClientDetail as any
-                            ).__backend.profile.created_at
-                          ).toLocaleString()
-                        : "—"}
-                    </div>
-                    <div className="text-slate-700">
-                      <span className="text-slate-500">Contact Created:</span>{" "}
-                      {(selectedClientDetail as any).__backend?.user?.created_at
-                        ? new Date(
-                            (
-                              selectedClientDetail as any
-                            ).__backend.user.created_at
-                          ).toLocaleString()
-                        : "—"}
-                    </div>
-                    <div className="text-slate-700">
-                      <span className="text-slate-500">Pending Email:</span>{" "}
-                      {(selectedClientDetail as any).__backend?.profile
-                        ?.pending_contact_email || "—"}
-                    </div>
-                    <div className="text-slate-700">
-                      <span className="text-slate-500">
-                        Pending Email Verified:
-                      </span>{" "}
-                      {(selectedClientDetail as any).__backend?.profile
-                        ?.pending_contact_email_verified
-                        ? "Yes"
-                        : "No"}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-white border border-slate-100 rounded-2xl p-4">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                  Meta Sync
-                </div>
-                <div className="flex flex-col md:flex-row gap-3 md:items-center">
-                  <select
-                    value={selectedClientMetaPageId}
-                    onChange={(e) => setSelectedClientMetaPageId(e.target.value)}
-                    className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  >
-                    <option value="">-- Select Account/Page --</option>
-                    {metaPages.map((p) => (
-                      <option
-                        key={`${p.token_id}-${p.fb_page_id}`}
-                        value={p.fb_page_id}
-                      >
-                        {p.fb_page_name} — {p.account_label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    onClick={handleSyncClientMetaPage}
-                    disabled={isMetaSyncLoading}
-                    className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#6C5CE7] hover:bg-[#5a4ad1] disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {isMetaSyncLoading ? "Syncing..." : "Sync"}
-                  </button>
-                </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  Select a Meta page/account and click Sync to link it to this client.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ClientDetailsModal
+        selectedClientDetail={selectedClientDetail}
+        onClose={() => setSelectedClientDetail(null)}
+        openEditClientModal={openEditClientModal as any}
+        handleDeleteClient={handleDeleteClient as any}
+        formatPhoneWithCountry={formatPhoneWithCountry}
+        metaPages={metaPages as any}
+        selectedClientMetaPageId={selectedClientMetaPageId}
+        setSelectedClientMetaPageId={setSelectedClientMetaPageId}
+        handleSyncClientMetaPage={syncClientMetaPage}
+        isMetaSyncLoading={isMetaSyncLoading}
+      />
 
       {/* EMPLOYEE MODAL */}
-      {isEmployeeModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Users size={20} className="text-[#6C5CE7]" />
-                {editingEmployeeId ? "Edit Employee" : "Add Employee"}
-              </h3>
-              <button
-                onClick={() => setIsEmployeeModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Salutation
-                  </label>
-                  <select
-                    value={employeeForm.salutation}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({
-                        ...p,
-                        salutation: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  >
-                    <option value="Mr">Mr</option>
-                    <option value="Mrs">Mrs</option>
-                    <option value="Ms">Ms</option>
-                    <option value="Dr">Dr</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    First Name
-                  </label>
-                  <input
-                    value={employeeForm.firstName}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({
-                        ...p,
-                        firstName: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Last Name
-                  </label>
-                  <input
-                    value={employeeForm.lastName}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({
-                        ...p,
-                        lastName: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Role
-                  </label>
-                  <select
-                    value={employeeForm.role}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({ ...p, role: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  >
-                    <option value="superadmin">superadmin</option>
-                    <option value="manager">manager</option>
-                    <option value="content_writer">content_writer</option>
-                    <option value="designer">designer</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Phone
-                  </label>
-                  <input
-                    value={employeeForm.phone}
-                    onChange={(e) =>
-                      setEmployeeForm((p) => ({
-                        ...p,
-                        phone: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                  Email
-                </label>
-                <input
-                  value={employeeForm.email}
-                  onChange={(e) =>
-                    setEmployeeForm((p) => ({
-                      ...p,
-                      email: e.target.value,
-                    }))
-                  }
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                />
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
-              {editingEmployeeId && (
-                <button
-                  onClick={async () => {
-                    const ok = window.confirm("Delete employee?");
-                    if (!ok) return;
-                    await handleDeleteEmployee(String(editingEmployeeId));
-                    setIsEmployeeModalOpen(false);
-                  }}
-                  className="px-6 py-3 rounded-xl font-bold text-red-600 border border-red-200 hover:bg-red-50"
-                >
-                  Delete
-                </button>
-              )}
-              <button
-                onClick={() => setIsEmployeeModalOpen(false)}
-                className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveEmployee}
-                className="bg-[#6C5CE7] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#5a4ad1]"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <EmployeeModal
+        open={isEmployeeModalOpen}
+        editingEmployeeId={editingEmployeeId}
+        employeeForm={employeeForm as any}
+        setEmployeeForm={setEmployeeForm as any}
+        onClose={() => setIsEmployeeModalOpen(false)}
+        onSave={handleSaveEmployee}
+        onDelete={
+          editingEmployeeId
+            ? async () => {
+                const ok = window.confirm("Delete employee?");
+                if (!ok) return;
+                await handleDeleteEmployee(String(editingEmployeeId));
+                setIsEmployeeModalOpen(false);
+              }
+            : undefined
+        }
+      />
 
       {/* SERVICE DETAILS MODAL */}
-      {selectedServiceDetail && !isServiceModalOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSelectedServiceDetail(null);
-          }}
-        >
-          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Briefcase size={20} className="text-[#6C5CE7]" /> Service
-                Details
-              </h3>
-              <button
-                onClick={() => setSelectedServiceDetail(null)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-5 overflow-y-auto max-h-[75vh] relative">
-              {isServiceDetailLoading && (
-                <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center">
-                  <div className="flex items-center gap-2 text-slate-700 font-bold">
-                    <Loader2 className="animate-spin" size={18} /> Loading…
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
-                    Service ID
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
-                    {selectedServiceDetail.service_id || "—"}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
-                    Category
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
-                    {selectedServiceDetail.category?.name || "—"}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
-                    Name
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
-                    {selectedServiceDetail.name || "—"}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
-                    Price
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
-                    {typeof selectedServiceDetail.price === "number"
-                      ? selectedServiceDetail.price.toFixed(2)
-                      : (selectedServiceDetail.price as any) ?? "—"}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
-                    HSN
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
-                    {selectedServiceDetail.hsn || "—"}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
-                    Pipeline
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
-                    {selectedServiceDetail.is_pipeline ? "Yes" : "No"}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
-                    Status
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
-                    {selectedServiceDetail.is_active ? "Active" : "Inactive"}
-                  </div>
-                </div>
-
-                <div className="md:col-span-2">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">
-                    Description
-                  </div>
-                  <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 whitespace-pre-wrap">
-                    {selectedServiceDetail.description || "—"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-5">
-                <div className="font-bold text-slate-800 mb-3">
-                  Pipeline Prefixes / Config
-                </div>
-
-                {!selectedServiceDetail.is_pipeline && (
-                  <div className="text-slate-500">Not a pipeline service.</div>
-                )}
-
-                {selectedServiceDetail.is_pipeline && (
-                  <div className="border border-slate-100 rounded-2xl overflow-hidden">
-                    <div className="grid grid-cols-5 bg-slate-50 px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      <div className="col-span-3">Prefix</div>
-                      <div className="col-span-2">Count</div>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {(selectedServiceDetail.pipeline_config || []).length ===
-                        0 && (
-                        <div className="px-4 py-4 text-slate-500">
-                          No pipeline config.
-                        </div>
-                      )}
-                      {(selectedServiceDetail.pipeline_config || []).map(
-                        (row, idx) => (
-                          <div
-                            key={idx}
-                            className="grid grid-cols-5 px-4 py-3"
-                          >
-                            <div className="col-span-3 font-bold text-slate-800">
-                              {row.prefix || "—"}
-                            </div>
-                            <div className="col-span-2 font-bold text-slate-800">
-                              {row.count ?? "—"}
-                            </div>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
-              <button
-                onClick={() => setSelectedServiceDetail(null)}
-                className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  handleEditService(selectedServiceDetail);
-                }}
-                className="bg-[#0F172A] text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800"
-              >
-                Edit
-              </button>
-              <button
-                onClick={async () => {
-                  const ok = window.confirm("Delete service?");
-                  if (!ok) return;
-                  await deleteService(selectedServiceDetail.id);
-                  setSelectedServiceDetail(null);
-                }}
-                className="px-6 py-3 rounded-xl font-bold text-red-600 border border-red-200 hover:bg-red-50"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ServiceDetailsModal
+        open={!!selectedServiceDetail && !isServiceModalOpen}
+        service={selectedServiceDetail as any}
+        isLoading={isServiceDetailLoading}
+        onClose={() => setSelectedServiceDetail(null)}
+        onEdit={(svc) => {
+          handleEditService(svc as any);
+        }}
+        onDelete={async (serviceId) => {
+          const ok = window.confirm("Delete service?");
+          if (!ok) return;
+          await deleteService(serviceId);
+          setSelectedServiceDetail(null);
+        }}
+      />
 
       {/* SERVICE MODAL */}
-      {isServiceModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Briefcase size={20} className="text-[#6C5CE7]" />
-                {editingServiceId ? "Edit Service" : "Add Service"}
-              </h3>
-              <button
-                onClick={() => setIsServiceModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-5 overflow-y-auto max-h-[75vh]">
-              <div className="grid md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Category <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={newService.categoryId}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                    required
-                  >
-                    <option value="">-- Select Category --</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Service ID {!editingServiceId && "(Auto-generated)"}
-                  </label>
-                  <input
-                    value={newService.service_id}
-                    readOnly
-                    className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl outline-none text-slate-600 cursor-not-allowed"
-                    placeholder={newService.categoryId ? "Will be auto-generated" : "Select category first"}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Name
-                  </label>
-                  <input
-                    value={newService.name}
-                    onChange={(e) =>
-                      setNewService((p) => ({ ...p, name: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Price
-                  </label>
-                  <input
-                    type="number"
-                    value={newService.price}
-                    onChange={(e) =>
-                      setNewService((p) => ({ ...p, price: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Description
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={newService.description}
-                    onChange={(e) =>
-                      setNewService((p) => ({
-                        ...p,
-                        description: e.target.value,
-                      }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    HSN
-                  </label>
-                  <input
-                    value={newService.hsn}
-                    onChange={(e) =>
-                      setNewService((p) => ({ ...p, hsn: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-                <div className="flex items-end gap-3">
-                  <label className="flex items-center gap-2 font-bold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={newService.isPipeline}
-                      onChange={(e) =>
-                        setNewService((p) => ({
-                          ...p,
-                          isPipeline: e.target.checked,
-                        }))
-                      }
-                    />
-                    Pipeline Service
-                  </label>
-                </div>
-              </div>
-
-              {newService.isPipeline && (
-                <div className="border-t border-slate-100 pt-5">
-                  <div className="flex justify-between items-center mb-3">
-                    <h4 className="font-bold text-slate-800">
-                      Pipeline Config
-                    </h4>
-                    <button
-                      onClick={addPipelineRow}
-                      className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold hover:bg-slate-50 flex items-center gap-2"
-                      type="button"
-                    >
-                      <Plus size={16} /> Add Row
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {newService.pipelineConfig.map((row, idx) => (
-                      <div
-                        key={idx}
-                        className="grid grid-cols-5 gap-2 items-center"
-                      >
-                        <input
-                          value={row.prefix}
-                          onChange={(e) =>
-                            updatePipelineRow(idx, "prefix", e.target.value)
-                          }
-                          placeholder="Prefix"
-                          className="col-span-3 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        />
-                        <input
-                          type="number"
-                          value={row.count}
-                          onChange={(e) =>
-                            updatePipelineRow(
-                              idx,
-                              "count",
-                              Number(e.target.value)
-                            )
-                          }
-                          placeholder="Count"
-                          className="col-span-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        />
-                        <button
-                          onClick={() => removePipelineRow(idx)}
-                          className="col-span-1 p-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
-                          type="button"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-4">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Platforms
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {PLATFORM_OPTIONS.map((opt) => {
-                        const checked = (newService.platforms || []).includes(opt.value);
-                        return (
-                          <label
-                            key={opt.value}
-                            className={
-                              "px-3 py-2 rounded-xl border text-sm font-bold cursor-pointer select-none flex items-center gap-2 " +
-                              (checked
-                                ? "bg-[#6C5CE7] text-white border-[#6C5CE7]"
-                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")
-                            }
-                          >
-                            <input
-                              type="checkbox"
-                              className="hidden"
-                              checked={checked}
-                              onChange={(e) => {
-                                const next = new Set(newService.platforms || []);
-                                if (e.target.checked) next.add(opt.value);
-                                else next.delete(opt.value);
-                                setNewService((p) => ({ ...p, platforms: Array.from(next) }));
-                              }}
-                            />
-                            {opt.value === "other" ? (
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-current text-xs">
-                                +
-                              </span>
-                            ) : null}
-                            {opt.label}
-                          </label>
-                        );
-                      })}
-                    </div>
-
-                    {(newService.platforms || []).includes("other") && (
-                      <div className="mt-2">
-                        <input
-                          value={newService.otherPlatform || ""}
-                          onChange={(e) =>
-                            setNewService((p) => ({ ...p, otherPlatform: e.target.value }))
-                          }
-                          placeholder="Type platform name"
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                        />
-                      </div>
-                    )}
-
-                    {newService.isPipeline && (newService.platforms || []).length === 0 && (
-                      <div className="mt-2 text-xs text-red-600 font-semibold">
-                        Select at least one platform.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
-              {editingServiceId && (
-                <button
-                  onClick={async () => {
-                    const ok = window.confirm("Delete service?");
-                    if (!ok) return;
-                    await deleteService(editingServiceId);
-                    setIsServiceModalOpen(false);
-                  }}
-                  className="px-6 py-3 rounded-xl font-bold text-red-600 border border-red-200 hover:bg-red-50"
-                >
-                  Delete
-                </button>
-              )}
-              <button
-                onClick={() => setIsServiceModalOpen(false)}
-                className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddService}
-                className="bg-[#6C5CE7] text-white px-6 py-3 rounded-xl font-bold hover:bg-[#5a4ad1]"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ServiceModal
+        open={isServiceModalOpen}
+        editingServiceId={editingServiceId}
+        newService={newService as any}
+        setNewService={setNewService as any}
+        categories={categories as any}
+        platformOptions={PLATFORM_OPTIONS as any}
+        onClose={() => setIsServiceModalOpen(false)}
+        onSave={handleAddService}
+        onDelete={
+          editingServiceId
+            ? async () => {
+                const ok = window.confirm("Delete service?");
+                if (!ok) return;
+                await deleteService(editingServiceId);
+                setIsServiceModalOpen(false);
+              }
+            : undefined
+        }
+        onCategoryChange={handleCategoryChange}
+        addPipelineRow={addPipelineRow}
+        removePipelineRow={removePipelineRow}
+        updatePipelineRow={updatePipelineRow}
+      />
 
       {/* CATEGORY MODAL */}
-      {isCategoryModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Tag size={20} className="text-[#6C5CE7]" /> Categories
-              </h3>
-              <button
-                onClick={() => setIsCategoryModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex gap-2">
-                <input
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="New category name"
-                  className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                />
-                <button
-                  onClick={handleAddCategory}
-                  className="bg-[#0F172A] text-white px-5 py-2.5 rounded-xl font-bold"
-                >
-                  Add
-                </button>
-              </div>
-              <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden">
-                {categories.map((c) => (
-                  <div
-                    key={c.id}
-                    className="p-4 flex items-center justify-between"
-                  >
-                    <div className="font-bold text-slate-800">{c.name}</div>
-                    <button
-                      onClick={() => handleDeleteCategory(c.id)}
-                      className="p-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-                {categories.length === 0 && (
-                  <div className="p-6 text-center text-slate-400">
-                    No categories.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <CategoryModal
+        open={isCategoryModalOpen}
+        categories={categories as any}
+        newCategoryName={newCategoryName}
+        setNewCategoryName={setNewCategoryName}
+        onAdd={handleAddCategory}
+        onDelete={handleDeleteCategory}
+        onClose={() => setIsCategoryModalOpen(false)}
+      />
 
       {/* RECORD PAYMENT MODAL */}
-      {isPaymentModalOpen && selectedInvoice && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <PaymentIcon size={20} className="text-[#6C5CE7]" /> Record
-                Payment
-              </h3>
-              <button
-                onClick={() => setIsPaymentModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="text-sm text-slate-600 font-medium">
-                {selectedInvoice.invoiceNumber} — {selectedInvoice.clientName}
-              </div>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Amount
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={paymentAmountInput}
-                    onChange={(e) =>
-                      setPaymentAmountInput(Number(e.target.value))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Payment Mode (optional)
-                  </label>
-                  <select
-                    value={paymentModeIdInput}
-                    onChange={(e) => setPaymentModeIdInput(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  >
-                    <option value="">-- Select --</option>
-                    {invoiceDropdowns.paymentModes.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                    Reference (optional)
-                  </label>
-                  <input
-                    value={paymentReferenceInput}
-                    onChange={(e) => setPaymentReferenceInput(e.target.value)}
-                    placeholder="e.g. UPI txn id"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3">
-              <button
-                onClick={() => setIsPaymentModalOpen(false)}
-                className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRecordPayment}
-                className="bg-[#0F172A] text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PaymentModal
+        open={isPaymentModalOpen}
+        selectedInvoice={selectedInvoice as any}
+        paymentAmountInput={paymentAmountInput}
+        setPaymentAmountInput={setPaymentAmountInput}
+        paymentModeIdInput={paymentModeIdInput}
+        setPaymentModeIdInput={setPaymentModeIdInput}
+        paymentReferenceInput={paymentReferenceInput}
+        setPaymentReferenceInput={setPaymentReferenceInput}
+        paymentModes={invoiceDropdowns.paymentModes as any}
+        onClose={() => setIsPaymentModalOpen(false)}
+        onSave={handleRecordPayment}
+      />
 
       {/* PAYMENT MODE MODAL */}
-      {isPaymentModeModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <CreditCard size={20} className="text-[#6C5CE7]" /> Payment
-                Modes
-              </h3>
-              <button
-                onClick={() => setIsPaymentModeModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex gap-2">
-                <input
-                  value={newPaymentModeName}
-                  onChange={(e) => setNewPaymentModeName(e.target.value)}
-                  placeholder="New payment mode"
-                  className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                />
-                <button
-                  onClick={handleAddPaymentMode}
-                  className="bg-[#0F172A] text-white px-5 py-2.5 rounded-xl font-bold"
-                >
-                  Add
-                </button>
-              </div>
-              <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden">
-                {invoiceDropdowns.paymentModes.map((m) => (
-                  <div
-                    key={m.id}
-                    className="p-4 flex items-center justify-between"
-                  >
-                    <div className="font-bold text-slate-800">{m.name}</div>
-                    <button
-                      onClick={() => handleDeletePaymentMode(m.id)}
-                      className="p-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-                {invoiceDropdowns.paymentModes.length === 0 && (
-                  <div className="p-6 text-center text-slate-400">
-                    No modes.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <PaymentModeModal
+        open={isPaymentModeModalOpen}
+        newPaymentModeName={newPaymentModeName}
+        setNewPaymentModeName={setNewPaymentModeName}
+        paymentModes={invoiceDropdowns.paymentModes}
+        onAdd={handleAddPaymentMode}
+        onDelete={handleDeletePaymentMode}
+        onClose={() => setIsPaymentModeModalOpen(false)}
+      />
 
       {/* PAYMENT TERM MODAL */}
-      {isPaymentTermModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Clock size={20} className="text-[#6C5CE7]" /> Payment Terms
-              </h3>
-              <button
-                onClick={() => setIsPaymentTermModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex gap-2">
-                <input
-                  value={newPaymentTermName}
-                  onChange={(e) => setNewPaymentTermName(e.target.value)}
-                  placeholder="New payment term"
-                  className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none"
-                />
-                <button
-                  onClick={handleAddPaymentTerm}
-                  className="bg-[#0F172A] text-white px-5 py-2.5 rounded-xl font-bold"
-                >
-                  Add
-                </button>
-              </div>
-              <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden">
-                {invoiceDropdowns.paymentTerms.map((t) => (
-                  <div
-                    key={t.id}
-                    className="p-4 flex items-center justify-between"
-                  >
-                    <div className="font-bold text-slate-800">{t.name}</div>
-                    <button
-                      onClick={() => handleDeletePaymentTerm(t.id)}
-                      className="p-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-                {invoiceDropdowns.paymentTerms.length === 0 && (
-                  <div className="p-6 text-center text-slate-400">
-                    No terms.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <PaymentTermModal
+        open={isPaymentTermModalOpen}
+        newPaymentTermName={newPaymentTermName}
+        setNewPaymentTermName={setNewPaymentTermName}
+        paymentTerms={invoiceDropdowns.paymentTerms}
+        onAdd={handleAddPaymentTerm}
+        onDelete={handleDeletePaymentTerm}
+        onClose={() => setIsPaymentTermModalOpen(false)}
+      />
 
       {/* INVOICE PREVIEW MODAL */}
-      {isPreviewModalOpen && previewData && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setIsPreviewModalOpen(false);
-          }}
-        >
-          <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <FileText size={20} className="text-[#6C5CE7]" /> Invoice
-                Preview
-              </h3>
-              <button
-                onClick={() => setIsPreviewModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[80vh] bg-slate-100">
-              <div
-                className="bg-white rounded-2xl p-4"
-                dangerouslySetInnerHTML={{ __html: previewData.html }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <InvoicePreviewModal
+        open={isPreviewModalOpen}
+        previewData={previewData}
+        onClose={() => setIsPreviewModalOpen(false)}
+      />
 
       {/* Meta Token Addition Modal */}
-      {isMetaModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <Share2 size={20} className="text-[#6C5CE7]" /> Meta Access
-                Token
-              </h3>
-              <button
-                onClick={() => {
-                  setIsMetaModalOpen(false);
-                  setMetaStep(1);
-                }}
-                className="p-2 hover:bg-slate-100 rounded-full text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-8">
-              {metaStep === 1 ? (
-                <div className="space-y-6 text-center">
-                  <div className="w-16 h-16 bg-violet-100 text-[#6C5CE7] rounded-full flex items-center justify-center mx-auto">
-                    <ShieldCheck size={32} />
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-bold text-slate-900 mb-2">
-                      Verification Required
-                    </h4>
-                    <p className="text-sm text-slate-500 leading-relaxed">
-                      To add a new Meta token, we need to verify your
-                      administrative access. Click below to receive an OTP on
-                      your registered email.
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleStartAddToken}
-                    disabled={metaLoading}
-                    className="w-full bg-[#0F172A] text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
-                  >
-                    {metaLoading ? (
-                      <Loader2 className="animate-spin" size={20} />
-                    ) : (
-                      "Send Verification OTP"
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Account Label
-                    </label>
-                    <input
-                      placeholder="e.g. Tarviz Primary"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-[#6C5CE7] outline-none font-medium"
-                      value={metaForm.account_label}
-                      onChange={(e) =>
-                        setMetaForm({
-                          ...metaForm,
-                          account_label: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      Meta Access Token
-                    </label>
-                    <textarea
-                      placeholder="Paste the Graph API long-lived token here..."
-                      rows={3}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-[#6C5CE7] outline-none text-xs font-mono resize-none"
-                      value={metaForm.access_token}
-                      onChange={(e) =>
-                        setMetaForm({
-                          ...metaForm,
-                          access_token: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-                      6-Digit OTP
-                    </label>
-                    <input
-                      maxLength={6}
-                      placeholder="000000"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-[#6C5CE7] outline-none text-center font-bold tracking-[0.5em] text-xl"
-                      value={metaForm.otp}
-                      onChange={(e) =>
-                        setMetaForm({ ...metaForm, otp: e.target.value })
-                      }
-                    />
-                  </div>
-                  <button
-                    onClick={handleConfirmAddToken}
-                    disabled={metaLoading}
-                    className="w-full bg-[#6C5CE7] text-white py-4 rounded-xl font-bold hover:bg-[#5a4ad1] transition-all flex items-center justify-center gap-2 shadow-lg shadow-violet-200"
-                  >
-                    {metaLoading ? (
-                      <Loader2 className="animate-spin" size={20} />
-                    ) : (
-                      "Confirm & Integrate"
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setMetaStep(1)}
-                    className="w-full text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors"
-                  >
-                    Back to Step 1
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <MetaTokenModal
+        open={isMetaModalOpen}
+        metaStep={metaStep}
+        setMetaStep={setMetaStep}
+        metaForm={metaForm}
+        setMetaForm={setMetaForm}
+        metaLoading={metaLoading}
+        onStart={handleStartAddToken}
+        onConfirm={handleConfirmAddToken}
+        onClose={() => setIsMetaModalOpen(false)}
+      />
     </div>
   );
 };
 
 export default AdminDashboard;
+
+// Optional new import path for the refactor (no behavior change):
+// `import AdminDashboardPage from "./admin/AdminDashboardPage";`
+// This will be used once we fully split tabs/modals/hooks.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export { default as AdminDashboardPage } from "./admin/AdminDashboardPage";
