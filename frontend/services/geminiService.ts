@@ -1,12 +1,15 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Fix: Always use process.env.API_KEY directly in the constructor as per guidelines.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Lazily create the client so the app doesn't crash if the key is missing.
+const getAiClient = (): GoogleGenAI | null => {
+  const key = (process.env.API_KEY || "").trim();
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
+};
 
 // Helper to check if API key is present
 export const isAiAvailable = (): boolean => {
-  return !!process.env.API_KEY;
+  return !!(process.env.API_KEY || "").trim();
 };
 
 export interface ChatMessage {
@@ -15,13 +18,10 @@ export interface ChatMessage {
 }
 
 export const chatWithAI = async (message: string, history: ChatMessage[]): Promise<string> => {
-  if (!isAiAvailable()) return "I'm sorry, my brain (API Key) is currently offline. Please try again later.";
+  const ai = getAiClient();
+  if (!ai) return "AI is currently unavailable.";
 
   try {
-    // Convert history to format expected by API if needed, or just append to prompt for stateless 
-    // simple implementation. For better context, we use the `chat` method.
-    
-    // Create a simple history string for context (simplification for this demo)
     const context = `You are "TarvizBot", the helpful AI assistant for Tarviz Digimart, a digital marketing agency in Chennai.
     Services: Social Media, SEO, Web Design, Graphic Design, E-commerce Management.
     Tone: Professional, friendly, and persuasive.
@@ -32,7 +32,6 @@ export const chatWithAI = async (message: string, history: ChatMessage[]): Promi
     
     User Query: ${message}`;
 
-    // Fix: Updated to gemini-3-flash-preview for basic text tasks.
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: context,
@@ -59,10 +58,10 @@ export interface SEOAuditResult {
 }
 
 export const generateSEOForBlog = async (topic: string, contentSnippet: string): Promise<SEOSuggestion | null> => {
-  if (!isAiAvailable()) return null;
+  const ai = getAiClient();
+  if (!ai) return null;
 
   try {
-    // Fix: Updated to gemini-3-flash-preview.
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Generate SEO metadata for a blog post about "${topic}". 
@@ -96,10 +95,10 @@ export const generateSEOForBlog = async (topic: string, contentSnippet: string):
 };
 
 export const generateBlogOutline = async (topic: string): Promise<string> => {
-    if (!isAiAvailable()) return "AI Service Unavailable. Please configure API_KEY.";
+    const ai = getAiClient();
+    if (!ai) return "AI Service Unavailable. Please configure API_KEY.";
     
     try {
-        // Fix: Updated to gemini-3-flash-preview.
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
             contents: `Create a comprehensive blog post outline for the topic: "${topic}". 
@@ -114,10 +113,10 @@ export const generateBlogOutline = async (topic: string): Promise<string> => {
 }
 
 export const analyzeSiteSEO = async (url: string): Promise<SEOAuditResult | null> => {
-  if (!isAiAvailable()) return null;
+  const ai = getAiClient();
+  if (!ai) return null;
 
   try {
-    // Fix: Updated to gemini-3-flash-preview.
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Analyze the potential SEO status for the website: ${url}. 
