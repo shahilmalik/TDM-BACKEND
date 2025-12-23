@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, User, ChevronRight, ChevronDown, Bot, Pencil } from 'lucide-react';
-import ChatBot from './ChatBot';
+import { Menu, X, User, ChevronRight, ChevronDown, Pencil } from 'lucide-react';
 import { api } from '../services/api';
 
 interface NavbarProps {
@@ -16,7 +15,6 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
 
@@ -62,9 +60,6 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
   };
 
   const menuIconColor = currentPage === 'home' && !scrolled ? 'text-white' : 'text-slate-800';
-  const chatButtonClass = currentPage === 'home' && !scrolled 
-    ? 'bg-white/20 text-white hover:bg-white/30 backdrop-blur-md' 
-    : 'bg-slate-100 text-slate-700 hover:bg-slate-200';
 
   const openAdmin = (path: string) => {
     window.open(`http://127.0.0.1:8001${path}`, '_blank', 'noopener,noreferrer');
@@ -177,15 +172,6 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
             >
               Contact
             </button>
-            
-            {/* AI Chat Button */}
-            <button 
-               onClick={() => setIsChatOpen(true)}
-               className={`p-2.5 rounded-full transition-all hover:scale-110 active:scale-95 ${chatButtonClass}`}
-               title="Talk to AI Assistant"
-            >
-               <Bot size={20} />
-            </button>
 
             {isLoggedIn ? (
                <div className={`flex items-center gap-4 pl-4 border-l ${scrolled ? 'border-gray-200' : 'border-gray-700'}`}>
@@ -219,12 +205,6 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
 
           {/* Mobile Toggle */}
           <div className="md:hidden flex items-center gap-4">
-            <button 
-               onClick={() => setIsChatOpen(true)}
-               className={`p-2 rounded-full ${menuIconColor}`}
-            >
-               <Bot size={24} />
-            </button>
             <button onClick={() => setIsOpen(!isOpen)} className={menuIconColor}>
               {isOpen ? <X size={28} /> : <Menu size={28} />}
             </button>
@@ -268,7 +248,6 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
         </div>
       )}
     </nav>
-    <ChatBot isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </>
   );
 };
