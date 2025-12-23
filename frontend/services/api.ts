@@ -635,6 +635,9 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
+  home: {
+    getHomePageFull: () => request<any>("/home/api/home-page-full/", { method: "GET" }),
+  },
 };
 
 // Mappers to translate Backend Enum to Frontend Types

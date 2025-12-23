@@ -23,6 +23,7 @@ USER_TYPES = [
     ("manager", "Manager"),
     ("content_writer", "Content Writer"),
     ("designer", "Designer"),
+    ("editor", "Editor"),
 ]
 
 class CustomUserManager(BaseUserManager):

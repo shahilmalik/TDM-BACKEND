@@ -46,6 +46,7 @@ urlpatterns = [
     path('api/kanban/', include('kanban.urls')),
     path('api/auth/', include('authentication.urls')),
     path('api/meta/', include('meta.urls')),
+    path('api/home/', include('home.urls')),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='redoc'),
 ]

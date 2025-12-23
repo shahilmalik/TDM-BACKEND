@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'invoice.apps.InvoiceConfig',
     'drf_yasg',
     'meta',
+    'home',
     "corsheaders",
     'simple_history',
     'channels',

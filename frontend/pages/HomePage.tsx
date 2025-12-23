@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Zap, TrendingUp, Cpu, Quote, MessageSquare, CheckCircle2, Search, Activity, BarChart, AlertTriangle, Check } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { ServicesList } from '../constants';
 import Footer from '../components/Footer';
 import SEO from '../components/SEO';
 import { analyzeSiteSEO, SEOAuditResult } from '../services/geminiService';
+import { api } from '../services/api';
 
 interface HomePageProps {
   onNavigate: (page: string, subPage?: string) => void;
@@ -15,6 +16,38 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
   const [auditResult, setAuditResult] = useState<SEOAuditResult | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
 
+  const [dbTestimonials, setDbTestimonials] = useState<
+    Array<{ id: number; client_name: string; role?: string; company?: string; content?: string }>
+  >([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api.home.getHomePageFull();
+        const t = Array.isArray(data?.testimonials) ? data.testimonials : [];
+        setDbTestimonials(t);
+      } catch (e) {
+        setDbTestimonials([]);
+      }
+    })();
+  }, []);
+
+  const testimonialsToRender = useMemo(() => {
+    if (dbTestimonials.length > 0) {
+      return dbTestimonials.slice(0, 3).map((t) => ({
+        name: t.client_name,
+        role: t.role || t.company || '',
+        text: t.content || '',
+      }));
+    }
+
+    return [
+      { name: "Anita Raj", role: "CEO, Glow Cosmetics", text: "Tarviz Digimart completely revamped our social media strategy. Our engagement has tripled in 3 months!" },
+      { name: "Senthil Kumar", role: "Founder, Green Eatz", text: "The team is incredibly creative. The branding package they delivered gave our startup a world-class look." },
+      { name: "Priya Menon", role: "Marketing Head, TechFlow", text: "Professional, timely, and data-driven. Their SEO services helped us rank on the first page for our key terms." }
+    ];
+  }, [dbTestimonials]);
+
   const handleAudit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auditUrl) return;
@@ -22,7 +55,6 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
     setIsAuditing(true);
     setAuditResult(null);
     
-    // Simulate slight delay for "processing" feel + API call
     const result = await analyzeSiteSEO(auditUrl);
     setAuditResult(result);
     setIsAuditing(false);
@@ -387,7 +419,6 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                        alt="Client Logo"
                        className="h-10 md:h-12 object-contain"
                        onError={(e) => { 
-                         // Fallback if logo fails
                          const target = e.target as HTMLImageElement;
                          target.style.display = 'none';
                          const parent = target.parentElement;
@@ -433,11 +464,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
             </div>
             
             <div className="grid md:grid-cols-3 gap-8">
-               {[
-                  { name: "Anita Raj", role: "CEO, Glow Cosmetics", text: "Tarviz Digimart completely revamped our social media strategy. Our engagement has tripled in 3 months!" },
-                  { name: "Senthil Kumar", role: "Founder, Green Eatz", text: "The team is incredibly creative. The branding package they delivered gave our startup a world-class look." },
-                  { name: "Priya Menon", role: "Marketing Head, TechFlow", text: "Professional, timely, and data-driven. Their SEO services helped us rank on the first page for our key terms." }
-               ].map((t, i) => (
+               {testimonialsToRender.map((t, i) => (
                   <div key={i} className="bg-white p-8 rounded-3xl border border-slate-100 hover:shadow-xl transition-shadow relative shadow-sm">
                      <Quote className="text-[#6C5CE7] mb-4 opacity-20" size={40} />
                      <p className="text-slate-600 mb-6 italic leading-relaxed">"{t.text}"</p>

@@ -386,6 +386,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     addPipelineRow,
     removePipelineRow,
     updatePipelineRow,
+    fetchServicesAndCategories,
+    resetServicesList,
+    fetchMoreServicesList,
   } = servicesDomain;
 
   const invoicePaymentOptions = useInvoicePaymentOptions({
@@ -534,6 +537,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     })();
   }, []);
+
+  // Initial data loads (so API calls happen even after splitting into hooks)
+  useEffect(() => {
+    // Pipeline needs the client list for the dropdown
+    fetchClients();
+
+    // Employees tab list
+    fetchEmployees();
+
+    // Services tab list + categories
+    fetchServicesAndCategories();
+    resetServicesList();
+
+    // Invoices tab list + dropdowns
+    resetInvoicesList();
+    fetchInvoiceFilterOptions();
+    fetchInvoiceDropdowns();
+  }, [
+    fetchClients,
+    fetchEmployees,
+    fetchServicesAndCategories,
+    resetServicesList,
+    resetInvoicesList,
+    fetchInvoiceFilterOptions,
+    fetchInvoiceDropdowns,
+  ]);
+
+  // Refresh clients list when changing Clients tab filters/search
+  useEffect(() => {
+    if (activeTab !== "clients") return;
+    resetClientsList();
+  }, [activeTab, clientSearch, clientFilter, resetClientsList]);
+
+  // Refresh services list when changing Services tab filters
+  useEffect(() => {
+    if (activeTab !== "services") return;
+    resetServicesList();
+  }, [activeTab, categoryFilter, serviceActiveFilter, resetServicesList]);
+
+  // Refresh invoices list when changing Invoices tab filters/search
+  useEffect(() => {
+    if (activeTab !== "invoices") return;
+    resetInvoicesList();
+  }, [
+    activeTab,
+    invoiceSearch,
+    invoiceStatusFilter,
+    invoiceClientFilter,
+    invoiceDateRange,
+    resetInvoicesList,
+  ]);
 
   // Pipeline refresh when client changes
   useEffect(() => {
