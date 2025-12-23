@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, User, ChevronRight, ChevronDown, Bot } from 'lucide-react';
+import { Menu, X, User, ChevronRight, ChevronDown, Bot, Pencil } from 'lucide-react';
 import ChatBot from './ChatBot';
+import { api } from '../services/api';
 
 interface NavbarProps {
   onNavigate: (page: string, subPage?: string) => void;
@@ -8,13 +9,30 @@ interface NavbarProps {
   isLoggedIn: boolean;
   onLogin: () => void;
   onLogout: () => void;
+  isEditor?: boolean;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, onLogin, onLogout }) => {
+const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, onLogin, onLogout, isEditor = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data: any = await api.home.getHomePageFull();
+        const logos = Array.isArray(data?.brand_logos) ? data.brand_logos : [];
+        const url = logos?.[0]?.logo || null;
+        // avoid caching old logo in some browsers
+        setBrandLogoUrl(url ? `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}` : null);
+      } catch {
+        setBrandLogoUrl(null);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -48,6 +66,10 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
     ? 'bg-white/20 text-white hover:bg-white/30 backdrop-blur-md' 
     : 'bg-slate-100 text-slate-700 hover:bg-slate-200';
 
+  const openAdmin = (path: string) => {
+    window.open(`http://127.0.0.1:8001${path}`, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <>
     <nav 
@@ -59,17 +81,24 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
         <div className="flex justify-between items-center h-14">
           {/* Logo */}
           <div className="flex items-center gap-3 cursor-pointer group" onClick={() => onNavigate('home')}>
-             {/* Custom SVG Logo based on the image provided */}
              <div className="w-10 h-10 relative drop-shadow-sm transition-transform group-hover:scale-105 duration-300">
-                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  {/* Top Orange Triangle */}
-                  <path d="M10 50 L90 10 L50 50 Z" fill="#FF6B6B" />
-                  <path d="M90 10 L50 50 L90 50 Z" fill="#FF8E53" />
-                  
-                  {/* Bottom Purple Triangle */}
-                  <path d="M10 50 L50 50 L60 90 Z" fill="#6C5CE7" />
-                  <path d="M50 50 L90 50 L60 90 Z" fill="#8075E8" />
-                </svg>
+               {brandLogoUrl ? (
+                 <img
+                   src={brandLogoUrl}
+                   alt="Tarviz Digimart"
+                   className="w-10 h-10 object-contain"
+                 />
+               ) : (
+                 <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                   {/* Top Orange Triangle */}
+                   <path d="M10 50 L90 10 L50 50 Z" fill="#FF6B6B" />
+                   <path d="M90 10 L50 50 L90 50 Z" fill="#FF8E53" />
+                   
+                   {/* Bottom Purple Triangle */}
+                   <path d="M10 50 L50 50 L60 90 Z" fill="#6C5CE7" />
+                   <path d="M50 50 L90 50 L60 90 Z" fill="#8075E8" />
+                 </svg>
+               )}
              </div>
              
              <div className="flex flex-col justify-center">
@@ -82,6 +111,17 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
                 </span>
              </div>
           </div>
+
+          {isEditor && (
+            <button
+              type="button"
+              onClick={() => openAdmin('/admin/home/brandlogo/')}
+              className="ml-3 inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 bg-white/80 hover:bg-white text-slate-700"
+              title="Edit logo"
+            >
+              <Pencil size={16} />
+            </button>
+          )}
 
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center space-x-8">

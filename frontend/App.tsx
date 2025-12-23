@@ -22,7 +22,7 @@ function App() {
   const [currentServiceId, setCurrentServiceId] = useState("smm");
   const [authStatus, setAuthStatus] = useState<{
     isLoggedIn: boolean;
-    role: "client" | "admin";
+    role: "client" | "admin" | "editor";
   }>({
     isLoggedIn: false,
     role: "client",
@@ -34,7 +34,7 @@ function App() {
     const token = localStorage.getItem("accessToken");
     const userStr = localStorage.getItem("user");
     if (token) {
-      let role: "client" | "admin" = "client";
+      let role: "client" | "admin" | "editor" = "client";
       if (userStr) {
         try {
           const user = JSON.parse(userStr);
@@ -45,13 +45,14 @@ function App() {
             "content_writer",
             "designer",
           ];
-          if (adminRoles.includes(user.type)) role = "admin";
+          if (user.type === "editor") role = "editor";
+          else if (adminRoles.includes(user.type)) role = "admin";
         } catch (e) {
           // ignore JSON parse errors
         }
       }
       setAuthStatus({ isLoggedIn: true, role });
-      setCurrentPage(role === "admin" ? "admin-dashboard" : "dashboard");
+      setCurrentPage(role === "admin" ? "admin-dashboard" : role === "editor" ? "home" : "dashboard");
 
       // Avoid prompting on reload; only auto-register if permission already granted.
       try {
@@ -74,13 +75,17 @@ function App() {
     window.scrollTo(0, 0);
   };
 
-  const handleLoginSuccess = (role: "client" | "admin") => {
+  const handleLoginSuccess = (role: "client" | "admin" | "editor") => {
     setAuthStatus({ isLoggedIn: true, role });
     setNotification(
-      role === "admin" ? "Welcome Admin!" : "Logged in successfully."
+      role === "admin"
+        ? "Welcome Admin!"
+        : role === "editor"
+          ? "Welcome Editor!"
+          : "Logged in successfully."
     );
     setTimeout(() => setNotification(null), 3000);
-    setCurrentPage(role === "admin" ? "admin-dashboard" : "dashboard");
+    setCurrentPage(role === "admin" ? "admin-dashboard" : role === "editor" ? "home" : "dashboard");
 
     // Register push notifications after login (will request permission if needed).
     ensureNotificationsRegistered();
@@ -123,7 +128,12 @@ function App() {
   const renderPage = () => {
     switch (currentPage) {
       case "home":
-        return <HomePage onNavigate={handleNavigate} />;
+        return (
+          <HomePage
+            onNavigate={handleNavigate}
+            isEditor={authStatus.isLoggedIn && authStatus.role === "editor"}
+          />
+        );
       case "services":
         return (
           <ServicesPage
@@ -182,6 +192,7 @@ function App() {
             onNavigate={handleNavigate}
             currentPage={currentPage}
             isLoggedIn={authStatus.isLoggedIn}
+            isEditor={authStatus.isLoggedIn && authStatus.role === "editor"}
             onLogin={() => setCurrentPage("auth")}
             onLogout={handleLogout}
           />

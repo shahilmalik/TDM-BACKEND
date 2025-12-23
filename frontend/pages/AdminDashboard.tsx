@@ -34,6 +34,7 @@ import {
   Instagram,
   Linkedin,
   Share2,
+  Inbox,
 } from "lucide-react";
 import ContentItem from "../components/ContentItem";
 import CreateTaskModal from "./admin/components/CreateTaskModal";
@@ -55,6 +56,7 @@ import PaymentModal from "./admin/components/PaymentModal";
 import ServiceDetailsModal from "./admin/components/ServiceDetailsModal";
 import ServiceModal from "./admin/components/ServiceModal";
 import CategoryModal from "./admin/components/CategoryModal";
+import ContactSubmissionsTab from "./admin/tabs/ContactSubmissionsTab";
 import {
   AdminServiceItem,
   AdminEmployee,
@@ -128,6 +130,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     | "employees"
     | "settings"
     | "meta"
+    | "contact-submissions"
   >("pipeline");
   const [currentUser, setCurrentUser] = useState<any>(null);
 
@@ -422,6 +425,42 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const { invoiceForm, setInvoiceForm, updateInvoiceItem, handleCreateInvoice } =
     invoiceCreateForm;
 
+  const [contactSubmissions, setContactSubmissions] = useState<any[]>([]);
+  const [expandedContactSubmissionId, setExpandedContactSubmissionId] =
+    useState<number | null>(null);
+
+  const fetchContactSubmissions = async () => {
+    try {
+      const res: any = await api.home.contactSubmissions.list();
+      const items = Array.isArray(res) ? res : res?.results || [];
+      setContactSubmissions(items);
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  const markContacted = async (id: number, notes: string) => {
+    try {
+      const updated: any = await api.home.contactSubmissions.markContacted(
+        id,
+        notes
+      );
+      setContactSubmissions((prev) =>
+        prev.map((x: any) =>
+          x.id === id
+            ? {
+                ...x,
+                contacted: true,
+                contact_notes: updated?.contact_notes ?? notes,
+              }
+            : x
+        )
+      );
+    } catch (e) {
+      // ignore
+    }
+  };
+
   const handleLogoutAction = () => {
     if (window.confirm("Are you sure you want to logout?")) {
       onLogout();
@@ -554,6 +593,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     resetInvoicesList();
     fetchInvoiceFilterOptions();
     fetchInvoiceDropdowns();
+
+    // Contact submissions tab list
+    fetchContactSubmissions();
   }, [
     fetchClients,
     fetchEmployees,
@@ -606,6 +648,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (activeTab !== "settings") return;
     fetchCompanyProfile();
   }, [activeTab, fetchCompanyProfile]);
+
+  // Refresh contact submissions when tab becomes active
+  useEffect(() => {
+    if (activeTab !== "contact-submissions") return;
+    fetchContactSubmissions();
+  }, [activeTab]);
 
   const handleStartPipeline = async (inv: any) => {
     try {
@@ -715,6 +763,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }`}
           >
             <Building size={20} /> Company Profile
+          </button>
+          <button
+            onClick={() => setActiveTab("contact-submissions")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+              activeTab === "contact-submissions"
+                ? "bg-[#FF6B6B] text-white"
+                : "text-slate-400 hover:bg-white/5"
+            }`}
+          >
+            <Inbox size={20} /> Contact Submissions
           </button>
         </nav>
         <div className="p-4 border-t border-slate-700">
@@ -871,6 +929,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             handleSaveCompanyProfile={handleSaveCompanyProfile}
             companyDetails={companyDetails}
             setCompanyDetails={setCompanyDetails}
+          />
+        )}
+
+        {/* CONTACT SUBMISSIONS TAB */}
+        {activeTab === "contact-submissions" && (
+          <ContactSubmissionsTab
+            submissions={contactSubmissions}
+            expandedId={expandedContactSubmissionId}
+            toggleExpanded={(id) =>
+              setExpandedContactSubmissionId((prev) => (prev === id ? null : id))
+            }
+            markContacted={markContacted}
           />
         )}
 

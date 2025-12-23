@@ -5,6 +5,7 @@ from .serializers import *
 from rest_framework import viewsets
 from .permissions import IsSuperAdmin
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 
 class BrandLogoViewSet(viewsets.ModelViewSet):
     queryset = BrandLogo.objects.all()
@@ -191,3 +192,28 @@ class FAQViewSet(viewsets.ModelViewSet):
     queryset = FAQ.objects.all()
     serializer_class = FAQSerializer
     permission_classes = [IsSuperAdmin]
+
+class ContactSubmissionViewSet(viewsets.ModelViewSet):
+    queryset = ContactSubmission.objects.all()
+    serializer_class = ContactSubmissionSerializer
+
+    def get_permissions(self):
+        # Public website can create submissions without auth.
+        if self.action in ['create']:
+            return [AllowAny()]
+        # Dashboard/admin can list/retrieve/update contacted status.
+        return [IsSuperAdmin()]
+
+    @action(detail=True, methods=['post'])
+    def mark_contacted(self, request, pk=None):
+        obj = self.get_object()
+        notes = request.data.get('notes')
+        if not notes or not str(notes).strip():
+            return Response({"detail": "Notes are required."}, status=400)
+
+        obj.contacted = True
+        obj.contact_notes = str(notes).strip()
+        obj.save(update_fields=['contacted', 'contact_notes'])
+        return Response(self.get_serializer(obj).data)
+
+    # NOTE: previous mark_read/mark_unread actions removed in favor of lead tracking.

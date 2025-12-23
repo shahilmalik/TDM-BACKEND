@@ -24,6 +24,7 @@ from home.models import (
 	ContactPage,
 	FAQ,
 	AboutPage,
+	ContactSubmission,
 )
 
 
@@ -54,7 +55,7 @@ class CaseStudyImageAdmin(admin.ModelAdmin):
 
 @admin.register(Testimonial)
 class TestimonialAdmin(admin.ModelAdmin):
-    list_display = ("id", "client_name", "company", "role")
+    list_display = ("id", "client_name", "company", "role", "profile_pic")
     search_fields = ("client_name", "company")
 
 
@@ -177,6 +178,53 @@ class FAQAdmin(admin.ModelAdmin):
 class AboutPageAdmin(admin.ModelAdmin):
     list_display = ("id", "title")
     search_fields = ("title",)
+
+
+@admin.register(ContactSubmission)
+class ContactSubmissionAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "created_at",
+        "name",
+        "organization",
+        "email",
+        "phone",
+        "whatsapp",
+        "subject",
+        "contacted",
+    )
+    list_filter = ("contacted", "whatsapp", "created_at")
+    search_fields = (
+        "name",
+        "organization",
+        "email",
+        "phone",
+        "subject",
+        "body",
+        "contact_notes",
+    )
+    ordering = ("-created_at",)
+
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "created_at",
+                    "name",
+                    "organization",
+                    "email",
+                    "phone",
+                    "whatsapp",
+                    "subject",
+                    "body",
+                    "contacted",
+                    "contact_notes",
+                )
+            },
+        ),
+    )
+    readonly_fields = ("created_at",)
 
 
 

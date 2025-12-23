@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Mail, Phone, MapPin, Send, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import Footer from '../components/Footer';
 import SEO from '../components/SEO';
+import { api } from '../services/api';
 
 interface ContactPageProps {
   onLogin: () => void;
@@ -56,10 +57,31 @@ const ContactPage: React.FC<ContactPageProps> = ({ onLogin }) => {
     setFormData(prev => ({ ...prev, whatsapp: e.target.checked }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert("Thank you! We've received your inquiry. A representative will contact you shortly.");
-    // In a real app, send data to backend here
+    try {
+      await api.home.contactSubmissions.create({
+        name: formData.name,
+        organization: formData.orgName,
+        email: formData.email,
+        phone: formData.phone,
+        whatsapp: formData.whatsapp,
+        subject: formData.subject,
+        body: formData.body,
+      });
+      alert("Thank you! We've received your inquiry. A representative will contact you shortly.");
+      setFormData({
+        name: '',
+        orgName: '',
+        email: '',
+        phone: '',
+        whatsapp: false,
+        subject: '',
+        body: ''
+      });
+    } catch (err: any) {
+      alert(err?.message || 'Failed to submit. Please try again.');
+    }
   };
 
   return (

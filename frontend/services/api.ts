@@ -7,7 +7,15 @@ import {
   UserProfile,
 } from "../types";
 
-export const BASE_URL = "http://localhost:8000/api";
+export const BASE_URL =
+  (import.meta as any)?.env?.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" ? (window as any)?.VITE_API_BASE_URL : undefined) ||
+  "http://localhost:8000/api";
+
+// Helpful in dev: immediately show which backend the app is calling.
+try {
+  console.debug("api: BASE_URL =", BASE_URL);
+} catch (e) {}
 
 const getHeaders = () => {
   const token = localStorage.getItem("accessToken");
@@ -636,7 +644,33 @@ export const api = {
       }),
   },
   home: {
-    getHomePageFull: () => request<any>("/home/api/home-page-full/", { method: "GET" }),
+    getHomePageFull: () => request<any>("/home/home-page-full/", { method: "GET" }),
+
+    contactSubmissions: {
+      // Backend routes are under `/api/home/api/...` because `backend/tarviz/urls.py` mounts `home.urls` at `api/home/`
+      // and `backend/home/urls.py` mounts the router at `api/`.
+      create: (data: {
+        name: string;
+        organization?: string;
+        email: string;
+        phone?: string;
+        whatsapp?: boolean;
+        subject: string;
+        body: string;
+        contacted?: boolean;
+        contact_notes?: string;
+      }) =>
+        request<any>("/home/api/contact-submissions/", {
+          method: "POST",
+          body: JSON.stringify(data),
+        }),
+      list: () => request<any>("/home/api/contact-submissions/", { method: "GET" }),
+      markContacted: (id: number | string, notes: string) =>
+        request<any>(`/home/api/contact-submissions/${id}/mark_contacted/`, {
+          method: "POST",
+          body: JSON.stringify({ notes }),
+        }),
+    },
   },
 };
 

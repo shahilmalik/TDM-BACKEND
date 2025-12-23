@@ -26,6 +26,7 @@ router.register(r'seo-page', SEOPageViewSet)
 router.register(r'contact-page', ContactPageViewSet)
 router.register(r'faqs', FAQViewSet)
 router.register(r'about-page', AboutPageViewSet)
+router.register(r'contact-submissions', ContactSubmissionViewSet)
 
 urlpatterns = [
     path('api/', include(router.urls)),

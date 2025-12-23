@@ -25,7 +25,7 @@ class CaseStudyImageSerializer(serializers.ModelSerializer):
 class TestimonialSerializer(serializers.ModelSerializer):
     class Meta:
         model = Testimonial
-        fields = ['id', 'client_name', 'role', 'company', 'content']
+        fields = ['id', 'client_name', 'role', 'company', 'content', 'profile_pic']
 
 class ClientLogoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -160,3 +160,20 @@ class FAQSerializer(serializers.ModelSerializer):
     class Meta:
         model = FAQ
         fields = ['id', 'question', 'answer']
+
+class ContactSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContactSubmission
+        fields = [
+            'id',
+            'name',
+            'organization',
+            'email',
+            'phone',
+            'whatsapp',
+            'subject',
+            'body',
+            'contacted',
+            'contact_notes',
+            'created_at',
+        ]

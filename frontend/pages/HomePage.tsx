@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Zap, TrendingUp, Cpu, Quote, MessageSquare, CheckCircle2, Search, Activity, BarChart, AlertTriangle, Check } from 'lucide-react';
+import { ArrowRight, Zap, TrendingUp, Cpu, Quote, MessageSquare, CheckCircle2, Search, Activity, BarChart, AlertTriangle, Check, Pencil } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { ServicesList } from '../constants';
 import Footer from '../components/Footer';
@@ -9,9 +9,10 @@ import { api } from '../services/api';
 
 interface HomePageProps {
   onNavigate: (page: string, subPage?: string) => void;
+  isEditor?: boolean;
 }
 
-const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
+const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => {
   const [auditUrl, setAuditUrl] = useState('');
   const [auditResult, setAuditResult] = useState<SEOAuditResult | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
@@ -20,17 +21,27 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
     Array<{ id: number; client_name: string; role?: string; company?: string; content?: string }>
   >([]);
 
+  const [homeFull, setHomeFull] = useState<any>(null);
+
   useEffect(() => {
     (async () => {
       try {
         const data = await api.home.getHomePageFull();
+        setHomeFull(data);
         const t = Array.isArray(data?.testimonials) ? data.testimonials : [];
         setDbTestimonials(t);
       } catch (e) {
+        setHomeFull(null);
         setDbTestimonials([]);
       }
     })();
   }, []);
+
+  const heroSlide = useMemo(() => {
+    const s = homeFull?.slides;
+    if (Array.isArray(s) && s.length > 0) return s[0];
+    return null;
+  }, [homeFull]);
 
   const testimonialsToRender = useMemo(() => {
     if (dbTestimonials.length > 0) {
@@ -60,6 +71,61 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
     setIsAuditing(false);
   };
 
+  const openAdmin = (path: string) => {
+    window.open(`http://127.0.0.1:8001${path}`, "_blank", "noopener,noreferrer");
+  };
+
+  const renderGradientTitle = (text: string) => {
+    const parts = String(text || '').split('#');
+    return parts.map((part, idx) => {
+      const isGradient = idx % 2 === 1;
+      if (!part) return null;
+      return isGradient ? (
+        <span
+          key={idx}
+          className="text-transparent bg-clip-text bg-gradient-to-r from-[#FF6B6B] to-[#6C5CE7]"
+        >
+          {part}
+        </span>
+      ) : (
+        <span key={idx}>{part}</span>
+      );
+    });
+  };
+
+  const renderBoldDescription = (text: string) => {
+    const parts = String(text || '').split('*');
+    return parts.map((part, idx) => {
+      const isBold = idx % 2 === 1;
+      if (!part) return null;
+      return isBold ? (
+        <strong key={idx} className="text-white font-semibold">
+          {part}
+        </strong>
+      ) : (
+        <span key={idx}>{part}</span>
+      );
+    });
+  };
+
+  const EditPencilButton: React.FC<{ label: string; onClick: () => void }> = ({
+    label,
+    onClick,
+  }) => {
+    if (!isEditor) return null;
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-sm font-semibold"
+        title={label}
+      >
+        <Pencil size={16} />
+        <span className="hidden sm:inline">Edit</span>
+      </button>
+    );
+  };
+
   return (
     <div className="bg-slate-50 overflow-x-hidden">
       <SEO 
@@ -70,6 +136,14 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
 
       {/* Hero Section */}
       <div className="relative min-h-screen flex items-center bg-[#0F172A] text-white overflow-hidden">
+        {isEditor && (
+          <div className="absolute top-24 right-4 z-50">
+            <EditPencilButton
+              label="Edit hero slide"
+              onClick={() => openAdmin('/admin/home/homeslide/')}
+            />
+          </div>
+        )}
         
         {/* Animated Background Blobs */}
         <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-[#FF6B6B] rounded-full mix-blend-screen filter blur-[128px] opacity-20 animate-pulse"></div>
@@ -82,16 +156,13 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
           <div className="z-10">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700 mb-6 backdrop-blur-sm">
               <span className="w-2 h-2 rounded-full bg-[#FF6B6B] animate-ping"></span>
-              <span className="text-xs font-semibold tracking-wider uppercase text-slate-300">Digital Evolution Agency</span>
+              <span className="text-xs font-semibold tracking-wider uppercase text-slate-300">{heroSlide?.tag || 'Digital Evolution Agency'}</span>
             </div>
             <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 leading-tight font-outfit">
-              Ignite Your <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#FF6B6B] to-[#6C5CE7]">
-                Digital Future
-              </span>
+              {renderGradientTitle(heroSlide?.title || 'Ignite Your #Digital Future#')}
             </h1>
             <p className="max-w-xl text-lg md:text-xl text-slate-400 mb-8 leading-relaxed">
-              We are <strong>Tarviz Digimart</strong>. A next-gen agency in Chennai merging creativity with AI-driven strategies to elevate your brand beyond the noise.
+              {renderBoldDescription(heroSlide?.description || 'We are *Tarviz Digimart*. A next-gen agency in Chennai merging creativity with AI-driven strategies to elevate your brand beyond the noise.')}
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
                <a 
@@ -362,6 +433,16 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                   </div>
                </div>
             </div>
+            {isEditor && (
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+                <div className="flex items-center justify-end">
+                  <EditPencilButton
+                    label="Edit creative process image"
+                    onClick={() => openAdmin('/admin/home/creativeprocessimage/')}
+                  />
+                </div>
+              </div>
+            )}
          </div>
       </div>
 
@@ -400,6 +481,16 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                   </div>
                </div>
             </div>
+            {isEditor && (
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+                <div className="flex items-center justify-end">
+                  <EditPencilButton
+                    label="Edit case studies"
+                    onClick={() => openAdmin('/admin/home/casestudyimage/')}
+                  />
+                </div>
+              </div>
+            )}
          </div>
       </div>
 
@@ -453,6 +544,16 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                ))}
             </div>
          </div>
+         {isEditor && (
+           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+             <div className="flex items-center justify-end">
+               <EditPencilButton
+                 label="Edit client logos"
+                 onClick={() => openAdmin('/admin/home/clientlogo/')}
+               />
+             </div>
+           </div>
+         )}
       </div>
 
       {/* Testimonials */}
@@ -480,10 +581,39 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
                   </div>
                ))}
             </div>
+            {isEditor && (
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+                <div className="flex items-center justify-end">
+                  <EditPencilButton
+                    label="Edit testimonials"
+                    onClick={() => openAdmin('/admin/home/testimonial/')}
+                  />
+                </div>
+              </div>
+            )}
          </div>
       </div>
 
+      {/* Footer */}
       <Footer onNavigate={onNavigate} />
+      {isEditor && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+          <div className="flex items-center justify-end gap-2">
+            <EditPencilButton
+              label="Edit footer contact"
+              onClick={() => openAdmin('/admin/home/footercontactinfo/')}
+            />
+            <EditPencilButton
+              label="Edit footer text"
+              onClick={() => openAdmin('/admin/home/footer/')}
+            />
+            <EditPencilButton
+              label="Edit footer content blocks"
+              onClick={() => openAdmin('/admin/home/footercontent/')}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -17,7 +17,7 @@ import { UserProfile } from "../types";
 import { api } from "../services/api";
 
 interface AuthPageProps {
-  onLoginSuccess: (role: "client" | "admin") => void;
+  onLoginSuccess: (role: "client" | "admin" | "editor") => void;
   onNavigateHome: () => void;
 }
 
@@ -144,7 +144,9 @@ const AuthPage: React.FC<AuthPageProps> = ({
             "content_writer",
             "designer",
           ];
-          if (adminRoles.includes(data.user.type)) {
+          if (data.user.type === "editor") {
+            onLoginSuccess("editor");
+          } else if (adminRoles.includes(data.user.type)) {
             onLoginSuccess("admin");
           } else {
             onLoginSuccess("client");
