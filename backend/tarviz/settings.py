@@ -164,12 +164,23 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles_collected'
+STATIC_URL = '/static/'
+STATIC_ROOT = '/home/ubuntu/TDM-BACKEND/backend/staticfiles'
 
-# Media uploads (user/admin uploaded images)
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = '/home/ubuntu/TDM-BACKEND/backend/media'
+
+
+# SECURITY: configure HTTPS correctly behind Nginx in production
+# Make sure Django knows the original request scheme.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Only enforce these in production when DEBUG is False
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
 
 # Basic upload constraints (used by model validators)
 MAX_UPLOAD_IMAGE_MB = int(os.getenv('MAX_UPLOAD_IMAGE_MB', '5'))
