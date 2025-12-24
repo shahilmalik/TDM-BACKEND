@@ -4,7 +4,7 @@ import * as Icons from 'lucide-react';
 import { ServicesList } from '../constants';
 import Footer from '../components/Footer';
 import SEO from '../components/SEO';
-import { analyzeSiteSEO, SEOAuditResult } from '../services/geminiService';
+import { analyzeSiteSEO, isAiAvailable, SEOAuditResult } from '../services/geminiService';
 import { api } from '../services/api';
 
 interface HomePageProps {
@@ -13,9 +13,24 @@ interface HomePageProps {
 }
 
 const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => {
+  const aiEnabled = isAiAvailable();
   const [auditUrl, setAuditUrl] = useState('');
   const [auditResult, setAuditResult] = useState<SEOAuditResult | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
+
+  const runAudit = async () => {
+    if (!aiEnabled) return;
+    const url = auditUrl.trim();
+    if (!url) return;
+
+    setIsAuditing(true);
+    try {
+      const res = await analyzeSiteSEO(url);
+      setAuditResult(res);
+    } finally {
+      setIsAuditing(false);
+    }
+  };
 
   const [dbTestimonials, setDbTestimonials] = useState<
     Array<{ id: number; client_name: string; role?: string; company?: string; content?: string }>
@@ -58,18 +73,6 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
       { name: "Priya Menon", role: "Marketing Head, TechFlow", text: "Professional, timely, and data-driven. Their SEO services helped us rank on the first page for our key terms." }
     ];
   }, [dbTestimonials]);
-
-  const handleAudit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!auditUrl) return;
-    
-    setIsAuditing(true);
-    setAuditResult(null);
-    
-    const result = await analyzeSiteSEO(auditUrl);
-    setAuditResult(result);
-    setIsAuditing(false);
-  };
 
   const openAdmin = (path: string) => {
     window.open(`http://127.0.0.1:8001${path}`, "_blank", "noopener,noreferrer");
@@ -243,104 +246,6 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
              </div>
           </div>
         </div>
-      </div>
-
-      {/* SEO Analyzer Section */}
-      <div className="bg-slate-50 py-16">
-         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden relative">
-               <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[#FF6B6B] to-[#6C5CE7]"></div>
-               <div className="p-8 md:p-12">
-                  <div className="text-center mb-8">
-                     <h2 className="text-3xl font-bold text-slate-900 mb-3">Is Your Website Invisible?</h2>
-                     <p className="text-slate-600">Get a free AI-powered preliminary SEO audit in seconds.</p>
-                  </div>
-
-                  <form onSubmit={handleAudit} className="max-w-2xl mx-auto flex flex-col md:flex-row gap-4 mb-8">
-                     <div className="flex-1 relative">
-                        <Search className="absolute left-4 top-4 text-slate-400" size={20} />
-                        <input 
-                           type="url" 
-                           required
-                           placeholder="https://yourwebsite.com" 
-                           value={auditUrl}
-                           onChange={(e) => setAuditUrl(e.target.value)}
-                           className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#6C5CE7] outline-none transition-all"
-                        />
-                     </div>
-                     <button 
-                        type="submit" 
-                        disabled={isAuditing}
-                        className="bg-[#0F172A] text-white px-8 py-4 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                     >
-                        {isAuditing ? <Activity className="animate-spin" /> : <BarChart />} Analyze Now
-                     </button>
-                  </form>
-
-                  {/* Audit Result Display */}
-                  {auditResult && (
-                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 bg-slate-50 rounded-2xl p-6 border border-slate-100">
-                        <div className="flex flex-col md:flex-row gap-8 items-center border-b border-slate-200 pb-6 mb-6">
-                           <div className="relative w-32 h-32 flex items-center justify-center">
-                              <svg className="w-full h-full transform -rotate-90">
-                                 <circle cx="64" cy="64" r="56" stroke="#e2e8f0" strokeWidth="12" fill="none" />
-                                 <circle 
-                                    cx="64" cy="64" r="56" 
-                                    stroke={auditResult.score > 70 ? "#10b981" : auditResult.score > 40 ? "#f59e0b" : "#ef4444"} 
-                                    strokeWidth="12" 
-                                    fill="none" 
-                                    strokeDasharray="351.86" 
-                                    strokeDashoffset={351.86 - (351.86 * auditResult.score) / 100}
-                                    className="transition-all duration-1000 ease-out"
-                                 />
-                              </svg>
-                              <div className="absolute flex flex-col items-center">
-                                 <span className="text-3xl font-extrabold text-slate-900">{auditResult.score}</span>
-                                 <span className="text-[10px] uppercase font-bold text-slate-500">Score</span>
-                              </div>
-                           </div>
-                           <div className="flex-1 text-center md:text-left">
-                              <h3 className="text-xl font-bold text-slate-900 mb-2">Audit Summary</h3>
-                              <p className="text-slate-600 text-sm leading-relaxed">{auditResult.summary}</p>
-                           </div>
-                        </div>
-
-                        <div className="grid md:grid-cols-2 gap-6">
-                           <div>
-                              <h4 className="font-bold text-green-600 mb-3 flex items-center gap-2"><CheckCircle2 size={18} /> Strengths</h4>
-                              <ul className="space-y-2">
-                                 {auditResult.strengths.map((s, i) => (
-                                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
-                                       <span className="w-1.5 h-1.5 bg-green-400 rounded-full mt-1.5"></span> {s}
-                                    </li>
-                                 ))}
-                              </ul>
-                           </div>
-                           <div>
-                              <h4 className="font-bold text-red-500 mb-3 flex items-center gap-2"><AlertTriangle size={18} /> Critical Issues</h4>
-                              <ul className="space-y-2">
-                                 {auditResult.weaknesses.map((w, i) => (
-                                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
-                                       <span className="w-1.5 h-1.5 bg-red-400 rounded-full mt-1.5"></span> {w}
-                                    </li>
-                                 ))}
-                              </ul>
-                           </div>
-                        </div>
-                        
-                        <div className="mt-8 text-center">
-                           <button 
-                              onClick={() => onNavigate('contact')}
-                              className="text-[#6C5CE7] font-bold hover:text-[#FF6B6B] transition-colors flex items-center justify-center gap-2 mx-auto"
-                           >
-                              Get Full Technical Report <ArrowRight size={16} />
-                           </button>
-                        </div>
-                     </div>
-                  )}
-               </div>
-            </div>
-         </div>
       </div>
 
       {/* Services Overview */}
@@ -593,6 +498,42 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
             )}
          </div>
       </div>
+
+      {/* --- AI SEO Audit module (safe-guarded) --- */}
+      {aiEnabled && (
+        <div className="py-24 bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16">
+              <h2 className="text-lg font-bold text-[#FF6B6B] tracking-widest uppercase mb-2">AI SEO Audit</h2>
+              <h3 className="text-4xl font-extrabold text-slate-900">Optimize Your Site</h3>
+            </div>
+            <div className="max-w-3xl mx-auto">
+              <div className="flex gap-4 mb-8">
+                <input
+                  type="text"
+                  value={auditUrl}
+                  onChange={(e) => setAuditUrl(e.target.value)}
+                  placeholder="Enter your site URL"
+                  className="flex-1 px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#FF6B6B] focus:border-transparent"
+                />
+                <button
+                  onClick={runAudit}
+                  disabled={isAuditing}
+                  className="px-6 py-3 bg-[#FF6B6B] text-white rounded-lg font-bold hover:bg-[#e65a5a] transition-all"
+                >
+                  {isAuditing ? 'Auditing...' : 'Run Audit'}
+                </button>
+              </div>
+              {auditResult && (
+                <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 shadow-sm">
+                  <h4 className="text-2xl font-bold text-slate-900 mb-4">Audit Result</h4>
+                  <pre className="text-sm text-slate-600">{JSON.stringify(auditResult, null, 2)}</pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <Footer onNavigate={onNavigate} />
