@@ -1,15 +1,24 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+// Vite only exposes env vars prefixed with `VITE_`.
+const getGeminiKey = (): string => {
+  try {
+    return String((import.meta as any)?.env?.VITE_GEMINI_API_KEY || "").trim();
+  } catch {
+    return "";
+  }
+};
+
 // Lazily create the client so the app doesn't crash if the key is missing.
 const getAiClient = (): GoogleGenAI | null => {
-  const key = (process.env.API_KEY || "").trim();
+  const key = getGeminiKey();
   if (!key) return null;
   return new GoogleGenAI({ apiKey: key });
 };
 
 // Helper to check if API key is present
 export const isAiAvailable = (): boolean => {
-  return !!(process.env.API_KEY || "").trim();
+  return !!getGeminiKey();
 };
 
 export interface ChatMessage {
