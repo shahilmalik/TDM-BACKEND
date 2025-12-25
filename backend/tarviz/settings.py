@@ -24,7 +24,6 @@ load_dotenv(BASE_DIR / '.env')
 SECRET_KEY = os.getenv('SECRET_KEY')
 FCM_API_KEY = os.getenv('FCM_API_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG') == 'True'
 
 ALLOWED_HOSTS = ['*']
 
@@ -50,6 +49,7 @@ INSTALLED_APPS = [
     "corsheaders",
     'simple_history',
     'channels',
+    'storages',
 ]
 
 MIDDLEWARE = [
@@ -71,7 +71,9 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = True
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://aistudio.google.com",
+    "https://tarvizdigimart.com",
+    "https://www.tarvizdigimart.com",
+    "https://prod.tarvizdigimart.com",
 ]
 
 
@@ -109,8 +111,28 @@ CHANNEL_LAYERS = {
 # Simple environment switch.
 # Set ENV=prod in backend/.env on the server to enable Postgres.
 ENV = os.getenv('ENV', 'dev').lower().strip()
+DEBUG = ENV != 'prod'
 
 if ENV == 'prod':
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+    AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
+    AWS_S3_REGION_NAME = os.getenv("AWS_DEFAULT_REGION")
+    AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
+
+    AWS_DEFAULT_ACL = None
+    AWS_S3_FILE_OVERWRITE = False
+
+    MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -167,9 +189,6 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = '/home/ubuntu/TDM-BACKEND/backend/staticfiles'
 
-MEDIA_URL = '/media/'
-MEDIA_ROOT = '/home/ubuntu/TDM-BACKEND/backend/media'
-
 
 # SECURITY: configure HTTPS correctly behind Nginx in production
 # Make sure Django knows the original request scheme.
@@ -207,6 +226,9 @@ REST_FRAMEWORK = {
     # Allow unauthenticated access by default so public endpoints (signin/signup)
     # work without extra per-view configuration. Protected views should set
     # their own `permission_classes = [IsAuthenticated]` where needed.
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny',
     ),
@@ -217,4 +239,18 @@ from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "ERROR",
+    },
 }
