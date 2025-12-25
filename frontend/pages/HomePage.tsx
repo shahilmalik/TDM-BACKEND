@@ -4,7 +4,6 @@ import * as Icons from 'lucide-react';
 import { ServicesList } from '../constants';
 import Footer from '../components/Footer';
 import SEO from '../components/SEO';
-import { analyzeSiteSEO, isAiAvailable, SEOAuditResult } from '../services/geminiService';
 import { api } from '../services/api';
 
 interface HomePageProps {
@@ -13,24 +12,9 @@ interface HomePageProps {
 }
 
 const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => {
-  const aiEnabled = isAiAvailable();
   const [auditUrl, setAuditUrl] = useState('');
-  const [auditResult, setAuditResult] = useState<SEOAuditResult | null>(null);
+  const [auditResult, setAuditResult] = useState(null);
   const [isAuditing, setIsAuditing] = useState(false);
-
-  const runAudit = async () => {
-    if (!aiEnabled) return;
-    const url = auditUrl.trim();
-    if (!url) return;
-
-    setIsAuditing(true);
-    try {
-      const res = await analyzeSiteSEO(url);
-      setAuditResult(res);
-    } finally {
-      setIsAuditing(false);
-    }
-  };
 
   const [dbTestimonials, setDbTestimonials] = useState<
     Array<{ id: number; client_name: string; role?: string; company?: string; content?: string }>
@@ -498,42 +482,6 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
             )}
          </div>
       </div>
-
-      {/* --- AI SEO Audit module (safe-guarded) --- */}
-      {aiEnabled && (
-        <div className="py-24 bg-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-16">
-              <h2 className="text-lg font-bold text-[#FF6B6B] tracking-widest uppercase mb-2">AI SEO Audit</h2>
-              <h3 className="text-4xl font-extrabold text-slate-900">Optimize Your Site</h3>
-            </div>
-            <div className="max-w-3xl mx-auto">
-              <div className="flex gap-4 mb-8">
-                <input
-                  type="text"
-                  value={auditUrl}
-                  onChange={(e) => setAuditUrl(e.target.value)}
-                  placeholder="Enter your site URL"
-                  className="flex-1 px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#FF6B6B] focus:border-transparent"
-                />
-                <button
-                  onClick={runAudit}
-                  disabled={isAuditing}
-                  className="px-6 py-3 bg-[#FF6B6B] text-white rounded-lg font-bold hover:bg-[#e65a5a] transition-all"
-                >
-                  {isAuditing ? 'Auditing...' : 'Run Audit'}
-                </button>
-              </div>
-              {auditResult && (
-                <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 shadow-sm">
-                  <h4 className="text-2xl font-bold text-slate-900 mb-4">Audit Result</h4>
-                  <pre className="text-sm text-slate-600">{JSON.stringify(auditResult, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Footer */}
       <Footer onNavigate={onNavigate} />
