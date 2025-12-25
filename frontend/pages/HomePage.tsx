@@ -4,7 +4,7 @@ import * as Icons from 'lucide-react';
 import { ServicesList } from '../constants';
 import Footer from '../components/Footer';
 import SEO from '../components/SEO';
-import { api } from '../services/api';
+import { api, getAdminBaseUrl, BASE_URL } from '../services/api';
 import { analyzeSiteSEO, SEOAuditResult } from "../services/geminiService";
 
 interface HomePageProps {
@@ -24,6 +24,9 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
 
   const [homeFull, setHomeFull] = useState<any>(null);
 
+  // Fetch client logos from API and store in state
+  const [clientLogos, setClientLogos] = useState<string[]>([]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -31,9 +34,19 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
         setHomeFull(data);
         const t = Array.isArray(data?.testimonials) ? data.testimonials : [];
         setDbTestimonials(t);
+        const logos = Array.isArray(data?.client_logos) ? data.client_logos : [];
+        // Map to full URLs if needed
+        setClientLogos(
+          logos.map((logo: any) =>
+            logo.logo && !logo.logo.startsWith('http')
+              ? `${BASE_URL.replace(/\/api\/?$/, '')}${logo.logo}`
+              : logo.logo || ''
+          ).filter(Boolean)
+        );
       } catch (e) {
         setHomeFull(null);
         setDbTestimonials([]);
+        setClientLogos([]);
       }
     })();
   }, []);
@@ -43,6 +56,12 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
     if (Array.isArray(s) && s.length > 0) return s[0];
     return null;
   }, [homeFull]);
+
+  const brandLogoUrl = homeFull?.brand_logos && homeFull.brand_logos.length > 0 && homeFull.brand_logos[0].logo
+    ? (homeFull.brand_logos[0].logo.startsWith('http')
+        ? homeFull.brand_logos[0].logo
+        : `${BASE_URL.replace(/\/api\/?$/, '')}${homeFull.brand_logos[0].logo}`)
+    : null;
 
   const testimonialsToRender = useMemo(() => {
     if (dbTestimonials.length > 0) {
@@ -61,7 +80,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
   }, [dbTestimonials]);
 
   const openAdmin = (path: string) => {
-    window.open(`http://127.0.0.1:8001${path}`, "_blank", "noopener,noreferrer");
+    window.open(`${getAdminBaseUrl()}${path}`, "_blank", "noopener,noreferrer");
   };
 
   const renderGradientTitle = (text: string) => {
@@ -145,7 +164,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
           <div className="absolute top-24 right-4 z-50">
             <EditPencilButton
               label="Edit hero slide"
-              onClick={() => openAdmin('/admin/home/homeslide/')}
+              onClick={() => openAdmin('/home/homeslide/')}
             />
           </div>
         )}
@@ -379,7 +398,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
                 <div className="flex items-center justify-end">
                   <EditPencilButton
                     label="Edit creative process image"
-                    onClick={() => openAdmin('/admin/home/creativeprocessimage/')}
+                    onClick={() => openAdmin('/home/creativeprocessimage/')}
                   />
                 </div>
               </div>
@@ -427,7 +446,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
                 <div className="flex items-center justify-end">
                   <EditPencilButton
                     label="Edit case studies"
-                    onClick={() => openAdmin('/admin/home/casestudyimage/')}
+                    onClick={() => openAdmin('/home/casestudyimage/')}
                   />
                 </div>
               </div>
@@ -444,42 +463,24 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
          <div className="marquee-wrapper">
             <div className="marquee-content flex gap-12 items-center px-4">
                {/* Original Set */}
-               {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+               {clientLogos.map((url, i) => (
                   <div key={i} className="flex-shrink-0 grayscale hover:grayscale-0 transition-all duration-300 opacity-70 hover:opacity-100 hover:scale-110">
                      <img 
-                       src={`https://logo.clearbit.com/${['google.com', 'airbnb.com', 'spotify.com', 'stripe.com', 'uber.com', 'slack.com', 'netflix.com', 'amazon.com'][i-1]}`} 
+                       src={url} 
                        alt="Client Logo"
                        className="h-10 md:h-12 object-contain"
-                       onError={(e) => { 
-                         const target = e.target as HTMLImageElement;
-                         target.style.display = 'none';
-                         const parent = target.parentElement;
-                         if(parent) {
-                            parent.innerText = ['Google', 'Airbnb', 'Spotify', 'Stripe', 'Uber', 'Slack', 'Netflix', 'Amazon'][i-1];
-                            parent.className = "flex-shrink-0 font-bold text-xl text-slate-400 uppercase tracking-widest";
-                         }
-                       }}
                      />
                   </div>
                ))}
             </div>
             {/* Duplicate Set for infinite loop */}
             <div className="marquee-content flex gap-12 items-center px-4">
-               {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+               {clientLogos.map((url, i) => (
                   <div key={`dup-${i}`} className="flex-shrink-0 grayscale hover:grayscale-0 transition-all duration-300 opacity-70 hover:opacity-100 hover:scale-110">
                      <img 
-                       src={`https://logo.clearbit.com/${['google.com', 'airbnb.com', 'spotify.com', 'stripe.com', 'uber.com', 'slack.com', 'netflix.com', 'amazon.com'][i-1]}`} 
+                       src={url} 
                        alt="Client Logo"
                        className="h-10 md:h-12 object-contain"
-                       onError={(e) => { 
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if(parent) {
-                             parent.innerText = ['Google', 'Airbnb', 'Spotify', 'Stripe', 'Uber', 'Slack', 'Netflix', 'Amazon'][i-1];
-                             parent.className = "flex-shrink-0 font-bold text-xl text-slate-400 uppercase tracking-widest";
-                          }
-                       }}
                      />
                   </div>
                ))}
@@ -490,7 +491,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
              <div className="flex items-center justify-end">
                <EditPencilButton
                  label="Edit client logos"
-                 onClick={() => openAdmin('/admin/home/clientlogo/')}
+                 onClick={() => openAdmin('/home/clientlogo/')}
                />
              </div>
            </div>
@@ -527,7 +528,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
                 <div className="flex items-center justify-end">
                   <EditPencilButton
                     label="Edit testimonials"
-                    onClick={() => openAdmin('/admin/home/testimonial/')}
+                    onClick={() => openAdmin('/home/testimonial/')}
                   />
                 </div>
               </div>
@@ -542,15 +543,15 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
           <div className="flex items-center justify-end gap-2">
             <EditPencilButton
               label="Edit footer contact"
-              onClick={() => openAdmin('/admin/home/footercontactinfo/')}
+              onClick={() => openAdmin('/home/footercontactinfo/')}
             />
             <EditPencilButton
               label="Edit footer text"
-              onClick={() => openAdmin('/admin/home/footer/')}
+              onClick={() => openAdmin('/home/footer/')}
             />
             <EditPencilButton
               label="Edit footer content blocks"
-              onClick={() => openAdmin('/admin/home/footercontent/')}
+              onClick={() => openAdmin('/home/footercontent/')}
             />
           </div>
         </div>

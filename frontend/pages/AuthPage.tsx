@@ -87,28 +87,6 @@ const AuthPage: React.FC<AuthPageProps> = ({
     { code: "+49", label: "DE +49" },
   ];
 
-  // --- Handlers ---
-
-  const handleGuestBypass = () => {
-    localStorage.setItem("demoMode", "client");
-    localStorage.setItem(
-      "user",
-      JSON.stringify({ type: "client", id: "demo-client" })
-    );
-    onLoginSuccess("client");
-  };
-
-  const handleAdminBypass = (
-    role: "superadmin" | "content_writer" | "designer" = "superadmin"
-  ) => {
-    localStorage.setItem("demoMode", role);
-    localStorage.setItem(
-      "user",
-      JSON.stringify({ type: role, id: `demo-${role}`, name: `Demo ${role}` })
-    );
-    onLoginSuccess("admin");
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -490,65 +468,6 @@ const AuthPage: React.FC<AuthPageProps> = ({
                 {isLoading ? <Loader2 className="animate-spin" /> : "Sign In"}
               </button>
             </form>
-            <div className="mt-8 pt-8 border-t border-slate-200">
-              <p className="text-xs text-center text-slate-400 mb-4 font-bold uppercase tracking-widest">
-                Demo Access
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={handleGuestBypass}
-                  className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 hover:border-[#6C5CE7] hover:bg-violet-50 transition-all group"
-                >
-                  <Unlock
-                    size={20}
-                    className="text-slate-400 group-hover:text-[#6C5CE7] mb-2"
-                  />
-                  <span className="text-sm font-bold text-slate-600 group-hover:text-[#6C5CE7]">
-                    Client View
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAdminBypass("superadmin")}
-                  className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 hover:border-[#FF6B6B] hover:bg-orange-50 transition-all group"
-                >
-                  <ShieldCheck
-                    size={20}
-                    className="text-slate-400 group-hover:text-[#FF6B6B] mb-2"
-                  />
-                  <span className="text-sm font-bold text-slate-600 group-hover:text-[#FF6B6B]">
-                    Admin View
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAdminBypass("content_writer")}
-                  className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition-all group"
-                >
-                  <PenTool
-                    size={20}
-                    className="text-slate-400 group-hover:text-blue-500 mb-2"
-                  />
-                  <span className="text-sm font-bold text-slate-600 group-hover:text-blue-500">
-                    Writer View
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAdminBypass("designer")}
-                  className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 hover:border-pink-500 hover:bg-pink-50 transition-all group"
-                >
-                  <Palette
-                    size={20}
-                    className="text-slate-400 group-hover:text-pink-500 mb-2"
-                  />
-                  <span className="text-sm font-bold text-slate-600 group-hover:text-pink-500">
-                    Designer View
-                  </span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -909,20 +828,11 @@ const AuthPage: React.FC<AuthPageProps> = ({
               </div>
             </div>
             <div className="bg-slate-50 p-6 flex justify-between items-center border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setView("login");
-                  handleGuestBypass();
-                }}
-                className="text-slate-400 hover:text-[#6C5CE7] text-sm font-bold flex items-center gap-2 transition-colors"
-              >
-                <Unlock size={16} /> Guest Bypass
-              </button>
+              <div />
               <button
                 type="submit"
                 disabled={isLoading}
-                className="bg-gradient-to-r from-[#FF6B6B] to-[#6C5CE7] text-white px-8 py-3 rounded-xl font-bold hover:shadow-lg transition-all flex items-center gap-2"
+                className="bg-gradient-to-r from-[#FF6B6B] to-[#6C5CE7] text-white px-8 py-3 rounded-xl font-bold hover:shadow-lg transition-all flex items-center gap-2 ml-auto"
               >
                 {isLoading ? (
                   <Loader2 className="animate-spin" />

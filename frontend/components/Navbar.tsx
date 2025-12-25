@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, X, User, ChevronRight, ChevronDown, Pencil } from 'lucide-react';
-import { api } from '../services/api';
+import { api, BASE_URL, getAdminBaseUrl } from '../services/api';
 
 interface NavbarProps {
   onNavigate: (page: string, subPage?: string) => void;
@@ -9,28 +9,31 @@ interface NavbarProps {
   onLogin: () => void;
   onLogout: () => void;
   isEditor?: boolean;
+  brandLogoUrl?: string;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, onLogin, onLogout, isEditor = false }) => {
+const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, onLogin, onLogout, isEditor = false, brandLogoUrl: propBrandLogoUrl }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
 
-  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(propBrandLogoUrl || null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const data: any = await api.home.getHomePageFull();
-        const logos = Array.isArray(data?.brand_logos) ? data.brand_logos : [];
-        const url = logos?.[0]?.logo || null;
-        // avoid caching old logo in some browsers
-        setBrandLogoUrl(url ? `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}` : null);
-      } catch {
-        setBrandLogoUrl(null);
-      }
-    })();
-  }, []);
+    if (!propBrandLogoUrl) {
+      (async () => {
+        try {
+          const data: any = await api.home.getHomePageFull();
+          const logos = Array.isArray(data?.brand_logos) ? data.brand_logos : [];
+          const url = logos?.[0]?.logo || null;
+          // avoid caching old logo in some browsers
+          setBrandLogoUrl(url ? `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}` : null);
+        } catch {
+          setBrandLogoUrl(null);
+        }
+      })();
+    }
+  }, [propBrandLogoUrl]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -62,7 +65,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
   const menuIconColor = currentPage === 'home' && !scrolled ? 'text-white' : 'text-slate-800';
 
   const openAdmin = (path: string) => {
-    window.open(`http://127.0.0.1:8001${path}`, '_blank', 'noopener,noreferrer');
+    window.open(`${getAdminBaseUrl()}${path}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -110,7 +113,7 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentPage, isLoggedIn, on
           {isEditor && (
             <button
               type="button"
-              onClick={() => openAdmin('/admin/home/brandlogo/')}
+              onClick={() => openAdmin('/home/brandlogo/')}
               className="ml-3 inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 bg-white/80 hover:bg-white text-slate-700"
               title="Edit logo"
             >

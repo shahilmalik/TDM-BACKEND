@@ -67,6 +67,18 @@ const refreshAccessToken = async (): Promise<string | null> => {
   }
 };
 
+// Helper to get Django admin base URL from API base
+export const getAdminBaseUrl = () => {
+  // Remove trailing /api or /api/ from BASE_URL and add /admin (no double admin)
+  // Remove any duplicate /admin/ in the result (greedy)
+  return BASE_URL.replace(/\/api\/?$/, "/admin").replace(/(\/admin)+\//g, "/admin/");
+};
+
+// In HomePage.tsx and anywhere else, use getAdminBaseUrl() and BASE_URL for all admin/API links.
+// Do not hardcode any URLs like http://127.0.0.1:8001 or https://prod.tarvizdigimart.com.
+
+// All API and admin URLs should be built using BASE_URL and getAdminBaseUrl.
+
 // Generic helper for requests
 const request = async <T>(
   endpoint: string,
@@ -649,7 +661,7 @@ export const api = {
       }),
   },
   home: {
-    getHomePageFull: () => request<any>("/home/home-page-full/", { method: "GET" }),
+    getHomePageFull: () => request<any>("/home/api/home-page-full/", { method: "GET" }),
 
     contactSubmissions: {
       // Backend routes are under `/api/home/api/...` because `backend/tarviz/urls.py` mounts `home.urls` at `api/home/`
