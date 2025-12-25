@@ -5,6 +5,7 @@ import { ServicesList } from '../constants';
 import Footer from '../components/Footer';
 import SEO from '../components/SEO';
 import { api } from '../services/api';
+import { analyzeSiteSEO, SEOAuditResult } from "../services/geminiService";
 
 interface HomePageProps {
   onNavigate: (page: string, subPage?: string) => void;
@@ -13,8 +14,9 @@ interface HomePageProps {
 
 const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => {
   const [auditUrl, setAuditUrl] = useState('');
-  const [auditResult, setAuditResult] = useState(null);
+  const [auditResult, setAuditResult] = useState<SEOAuditResult | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   const [dbTestimonials, setDbTestimonials] = useState<
     Array<{ id: number; client_name: string; role?: string; company?: string; content?: string }>
@@ -111,6 +113,22 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
         <span className="hidden sm:inline">Edit</span>
       </button>
     );
+  };
+
+  const handleAudit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!auditUrl) return;
+    setIsAuditing(true);
+    setAuditResult(null);
+    setAuditError(null);
+    try {
+      const result = await analyzeSiteSEO(auditUrl);
+      setAuditResult(result);
+      if (!result) setAuditError("No audit result returned. Try again later.");
+    } catch (err: any) {
+      setAuditError("Error running SEO audit. Please try again.");
+    }
+    setIsAuditing(false);
   };
 
   return (
@@ -279,6 +297,40 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, isEditor = false }) => 
           </div>
         </div>
       </div>
+
+      {/* SEO Audit Section */}
+      <section className="max-w-2xl mx-auto my-12 p-6 bg-white rounded-xl shadow">
+        <h2 className="font-bold text-2xl mb-4 text-[#6C5CE7]">AI SEO Audit</h2>
+        <form onSubmit={handleAudit} className="my-8 flex gap-4">
+          <input
+            type="url"
+            value={auditUrl}
+            onChange={e => setAuditUrl(e.target.value)}
+            placeholder="Enter your website URL"
+            className="px-4 py-2 rounded border w-full"
+            required
+          />
+          <button
+            type="submit"
+            className="px-6 py-2 bg-[#6C5CE7] text-white rounded font-bold"
+            disabled={isAuditing}
+          >
+            {isAuditing ? "Auditing..." : "Run SEO Audit"}
+          </button>
+        </form>
+        {isAuditing && (
+          <div className="text-center text-[#6C5CE7] font-semibold">Running audit...</div>
+        )}
+        {auditError && (
+          <div className="text-red-500 font-medium mt-2">{auditError}</div>
+        )}
+        {auditResult && (
+          <div className="bg-white rounded-xl shadow p-6 mt-4">
+            <h3 className="font-bold text-lg mb-2">SEO Audit Result</h3>
+            <pre className="text-sm text-slate-700">{JSON.stringify(auditResult, null, 2)}</pre>
+          </div>
+        )}
+      </section>
 
       {/* NEW SECTION: Creative Process */}
       <div className="py-24 bg-slate-50">
