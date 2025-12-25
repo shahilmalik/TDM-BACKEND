@@ -7,10 +7,15 @@ import {
   UserProfile,
 } from "../types";
 
-export const BASE_URL =
-  (import.meta as any)?.env?.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" ? (window as any)?.VITE_API_BASE_URL : undefined) ||
-  "http://localhost:8000/api";
+const API = import.meta.env.VITE_API_BASE_URL;
+
+if (!API) {
+  throw new Error("❌ VITE_API_BASE_URL was not injected at build time");
+}
+
+export const BASE_URL = API;
+
+console.debug("API BASE =", BASE_URL);
 
 // Helpful in dev: immediately show which backend the app is calling.
 try {
